@@ -1,5 +1,7 @@
 // Centraliza todas las llamadas al backend
-const API_URL = 'http://localhost:5000/api';
+// Usa la variable de entorno VITE_API_URL (definida en .env.production o en el
+// panel de Vercel). Si no existe, usa localhost para desarrollo.
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 
 export const api = {
   // AUTH

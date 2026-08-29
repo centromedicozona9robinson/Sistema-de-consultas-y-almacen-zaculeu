@@ -131,4 +131,46 @@ Abrir en el navegador: `http://localhost:5173`
 | `npm run dev`  | Servidor de desarrollo (Vite)    |
 | `npm run build`| Compila la aplicación de producción |
 | `npm run lint` | Análisis estático de código      |
+
+---
+
+## Despliegue en producción
+
+El frontend usa **Vercel** (estático) y el backend usa **Render** (servidor Node),
+con la base de datos en **Neon** (PostgreSQL serverless). Sigue estos pasos:
+
+### 1. Base de datos en Neon (PostgreSQL)
+
+1. Crea una cuenta gratis en [neon.tech](https://neon.tech).
+2. Crea un proyecto; Neon te da una **connection string** con este formato:
+   ```
+   postgres://USER:PASSWORD@HOST.neon.tech/dbname?sslmode=require
+   ```
+3. (Opcional pero recomendado) Ejecuta `backend/schema.sql` contra esa base usando
+   el editor SQL de Neon o `psql` para crear las tablas y datos iniciales.
+
+### 2. Backend en Render
+
+1. Crea una cuenta en [render.com](https://render.com) y conecta tu repositorio de GitHub.
+2. Crea un **Web Service** nuevo, selecciona tu repo.
+   - Root directory: `backend`
+   - Build command: `npm install`
+   - Start command: `node server.js`
+   - Plan: Free
+3. En **Environment**, añade:
+   - `DATABASE_URL` → la connection string de Neon (paso 1)
+   - `CORS_ORIGINS` → el dominio de tu frontend en Vercel, p. ej. `https://tu-app.vercel.app`
+   - `PORT` → Render lo asigna solo (**no lo definas**)
+4. Despliega. Al terminar, copia la URL del servicio, p. ej. `https://tu-backend.onrender.com`.
+
+### 3. Frontend en Vercel (conectar al backend)
+
+1. En el panel de Vercel de tu proyecto, ve a **Settings → Environment Variables**.
+2. Añade:
+   - `VITE_API_URL` → la URL del backend (paso 2) + `/api`, p. ej. `https://tu-backend.onrender.com/api`
+3. **Redeploy** el proyecto (los cambios de variables requieren nueva compilación).
+
+> Con esto, el frontend deja de apuntar a `localhost` y habla con el backend en la nube
+> (el login y todas las funciones empiezan a funcionar). El backend usa `api.js`
+> que lee `VITE_API_URL`, así que nada del código fuente cambia de un entorno a otro.
 ```

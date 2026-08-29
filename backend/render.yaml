@@ -1,0 +1,18 @@
+# Render blueprints (despliegue automático del backend)
+# Usado por el "Blueprints / render.yaml" de Render al importar el repo.
+services:
+  - type: web
+    name: zaculeu-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+    rootDir: backend

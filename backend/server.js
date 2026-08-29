@@ -4,7 +4,20 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+    .split(',').map(o => o.trim()).filter(Boolean);
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Permite peticiones sin origen (curl, Postman) y orígenes en la lista
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Origen no permitido por CORS'));
+    },
+}));
+
 app.use(express.json());
 
 const pool = require('./config/db');
@@ -954,6 +967,11 @@ app.get('/api/inventario/resumen', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
 app.listen(PORT, () => {
-    console.log(`✅ Backend server (PostgreSQL) running on http://localhost:${PORT}`);
+    console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
 });
