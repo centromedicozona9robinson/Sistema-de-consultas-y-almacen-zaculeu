@@ -110,6 +110,7 @@ export default function ConsultaMedica() {
       const detalle = [m.concentracion, m.forma_farmaceutica].filter(Boolean).join(" ") || "";
       const linea = `${nombre}${detalle ? " (" + detalle + ")" : ""} — SIN STOCK: no se dispensa`;
       setForm(f => ({ ...f, indicaciones: (f.indicaciones.trim() ? f.indicaciones + "\n" : "") + linea }));
+      setShowMedModal(false);
       return;
     }
     setCantidadModal(m);
