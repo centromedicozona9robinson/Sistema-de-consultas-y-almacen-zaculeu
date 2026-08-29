@@ -30,6 +30,9 @@ export default function ConsultaMedica() {
   const [showMedModal, setShowMedModal] = useState(false);
   const [medicamentos, setMedicamentos] = useState([]);
   const [medBusqueda, setMedBusqueda] = useState("");
+  const [recetas, setRecetas] = useState([]);
+  const [cantidadModal, setCantidadModal] = useState(null);
+  const [cantidad, setCantidad] = useState("");
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
   const nav = filtrarNav(user.rol, navItems);
@@ -69,6 +72,9 @@ export default function ConsultaMedica() {
           observaciones: con.observaciones || "",
           fecha_seguimiento: con.fecha_seguimiento || "",
         });
+        if (Array.isArray(con.recetas) && con.recetas.length > 0) {
+          setRecetas(con.recetas);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -97,12 +103,32 @@ export default function ConsultaMedica() {
   };
 
   const addMedicamento = (m) => {
-    const nombre = m.nombre_medicamento || "";
-    const detalle = [m.concentracion, m.forma_farmaceutica].filter(Boolean).join(" ") || "";
-    const linea = `${nombre}${detalle ? " (" + detalle + ")" : ""} — indicar dosis, frecuencia y duración`;
-    const prev = form.indicaciones.trim();
-    const nuevo = prev ? prev + "\n- " + linea : "- " + linea;
-    setForm(f => ({ ...f, indicaciones: nuevo }));
+    const stock = m.stock_total || 0;
+    if (stock <= 0) {
+      // Sin stock: se agrega como texto de indicación, sin descontar
+      const nombre = m.nombre_medicamento || "";
+      const detalle = [m.concentracion, m.forma_farmaceutica].filter(Boolean).join(" ") || "";
+      const linea = `${nombre}${detalle ? " (" + detalle + ")" : ""} — SIN STOCK: no se dispensa`;
+      setForm(f => ({ ...f, indicaciones: (f.indicaciones.trim() ? f.indicaciones + "\n" : "") + linea }));
+      return;
+    }
+    setCantidadModal(m);
+  };
+
+  const confirmarCantidad = () => {
+    const m = cantidadModal;
+    const qty = parseInt(cantidad, 10);
+    if (!m || !qty || qty <= 0) return;
+    const stock = m.stock_total || 0;
+    const cantidadFinal = qty > stock ? stock : qty;
+    setRecetas(r => [...r, { id_medicamento: m.id_medicamento, nombre: m.nombre_medicamento, cantidad: cantidadFinal, dosis: "" }]);
+    setCantidadModal(null);
+    setCantidad("");
+    setShowMedModal(false);
+  };
+
+  const eliminarReceta = (index) => {
+    setRecetas(r => r.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -114,7 +140,7 @@ export default function ConsultaMedica() {
     setSaving(true);
     setFeedback({ type: "", msg: "" });
     try {
-      const data = { ...form, id_visita: parseInt(id_visita), id_medico: user.id };
+      const data = { ...form, id_visita: parseInt(id_visita), id_medico: user.id, recetas };
       await api.registrarConsulta(data);
       setFeedback({ type: "ok", msg: "Consulta médica guardada. Estado: COMPLETADO" });
       setConsultaExistente(data);
@@ -274,6 +300,27 @@ export default function ConsultaMedica() {
               <textarea name="indicaciones" value={form.indicaciones} onChange={handleChange} rows={3}
                 className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all"
                 placeholder="Medicamentos, dosis, frecuencia, duración..." />
+              {recetas.length > 0 && (
+                <div className="mt-3 border border-[#c2c6d4] rounded-lg">
+                  <div className="px-3 py-2 bg-[#f2f7ff] border-b border-[#c2c6d4] text-xs font-bold text-[#00478d] uppercase">
+                    Medicamentos a dispensar (se restan del inventario)
+                  </div>
+                  <ul className="divide-y divide-[#eceef0]">
+                    {recetas.map((r, i) => (
+                      <li key={i} className="flex items-center gap-3 px-3 py-2.5">
+                        <Pill size={16} className="text-[#00478d] shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">{r.nombre}</div>
+                          <div className="text-xs text-[#00478d]">Cantidad a dispensar: {r.cantidad}</div>
+                        </div>
+                        <button type="button" onClick={() => eliminarReceta(i)} className="p-1.5 rounded-md hover:bg-[#ffdad6] text-[#ba1a1a]" title="Quitar">
+                          <X size={16} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div>
@@ -350,9 +397,49 @@ export default function ConsultaMedica() {
                         {m.forma_farmaceutica ? ` · ${m.forma_farmaceutica}` : ""}
                       </div>
                     </div>
+                    <span className={`text-xs font-bold shrink-0 ${(m.stock_total || 0) > 0 ? "text-[#006a71]" : "text-[#ba1a1a]"}`}>
+                      {m.unidad_medida || "unidad"}: {m.stock_total || 0}
+                    </span>
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cantidadModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => { setCantidadModal(null); setCantidad(""); }}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm relative" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#eceef0]">
+              <h3 className="font-bold text-lg text-[#00478d]">Cantidad</h3>
+              <button onClick={() => { setCantidadModal(null); setCantidad(""); }} className="p-1.5 rounded-md hover:bg-[#f2f4f6] text-[#424752]">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="text-sm font-semibold mb-2">{cantidadModal.nombre_medicamento}</div>
+              <div className="text-xs text-[#424752] mb-3">
+                Stock disponible: {cantidadModal.stock_total || 0} {cantidadModal.unidad_medida || "unidades"}
+              </div>
+              <label className="block text-sm font-semibold mb-1.5">Cantidad a dispensar</label>
+              <input
+                type="number"
+                min="1"
+                max={cantidadModal.stock_total || 1}
+                value={cantidad}
+                onChange={(e) => setCantidad(e.target.value)}
+                autoFocus
+                className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20"
+              />
+            </div>
+            <div className="flex justify-end gap-3 px-5 py-4 border-t border-[#eceef0]">
+              <button type="button" onClick={() => { setCantidadModal(null); setCantidad(""); }} className="px-4 py-2 border border-[#c2c6d4] rounded-lg font-semibold text-[#424752] hover:bg-[#f2f4f6]">
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmarCantidad} className="px-5 py-2 bg-[#005eb8] hover:bg-[#00478d] text-white rounded-lg font-bold">
+                Agregar
+              </button>
             </div>
           </div>
         </div>

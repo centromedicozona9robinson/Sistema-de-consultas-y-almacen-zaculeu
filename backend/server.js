@@ -270,6 +270,26 @@ app.get('/api/expediente/:id', async (req, res) => {
             ORDER BY v.fecha_visita DESC
         `, [id]);
 
+        // Recetas (prescripciones + medicamentos) por cada visita
+        const { rows: recetas } = await pool.query(
+            `SELECT v.id_visita, p.id_medicamento, m.nombre_medicamento AS nombre,
+                    p.cantidad_recetada AS cantidad, p.dosis
+             FROM visita v
+             INNER JOIN consulta_medica cm ON v.id_visita = cm.id_visita
+             INNER JOIN prescripcion p ON p.id_consulta = cm.id_consulta
+             INNER JOIN medicamento m ON p.id_medicamento = m.id_medicamento
+             WHERE v.id_paciente = $1
+             ORDER BY v.fecha_visita DESC, p.id_prescripcion`,
+            [id]
+        );
+        const recetasPorVisita = {};
+        for (const r of recetas) {
+            (recetasPorVisita[r.id_visita] = recetasPorVisita[r.id_visita] || []).push(r);
+        }
+        for (const v of visitas) {
+            v.recetas = recetasPorVisita[v.id_visita] || [];
+        }
+
         res.json({ paciente: pRows[0], visitas });
     } catch (error) {
         console.error(error);
@@ -535,14 +555,15 @@ app.post('/api/preconsulta', async (req, res) => {
 // CONSULTA MÉDICA - REGISTRAR DIAGNÓSTICO
 // ============================================================
 app.post('/api/consulta_medica', async (req, res) => {
-    const { id_visita, diagnostico, indicaciones, observaciones, fecha_seguimiento, id_medico } = req.body;
+    const { id_visita, diagnostico, indicaciones, observaciones, fecha_seguimiento, id_medico, recetas } = req.body;
     if (!id_visita || !id_medico) {
         return res.status(400).json({ error: 'Visita y médico son requeridos' });
     }
+    const client = await pool.connect();
     try {
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
 
-        const { rows } = await pool.query(
+        const { rows } = await client.query(
             `INSERT INTO consulta_medica (id_visita, diagnostico, indicaciones, observaciones, fecha_seguimiento, id_medico)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (id_visita) DO UPDATE SET
@@ -555,24 +576,99 @@ app.post('/api/consulta_medica', async (req, res) => {
              RETURNING *`,
             [id_visita, diagnostico || null, indicaciones || null, observaciones || null, fecha_seguimiento || null, id_medico]
         );
+        const id_consulta = rows[0].id_consulta;
 
-        await pool.query(
+        // Elimina prescripciones/dispensaciones previas de esta consulta para
+        // que al re-enviar no se dupliquen (reemplazo completo).
+        const prevs = await client.query(
+            `SELECT id_prescripcion FROM prescripcion WHERE id_consulta = $1`, [id_consulta]
+        );
+        for (const p of prevs.rows) {
+            await client.query('DELETE FROM dispensacion WHERE id_prescripcion = $1', [p.id_prescripcion]);
+        }
+        await client.query('DELETE FROM prescripcion WHERE id_consulta = $1', [id_consulta]);
+
+        const recetasArr = Array.isArray(recetas) ? recetas : [];
+        for (const r of recetasArr) {
+            const idMed = r.id_medicamento;
+            const qty = parseInt(r.cantidad, 10);
+            if (!idMed || !qty || qty <= 0) continue;
+
+            // Stock disponible total (sin lotes vencidos)
+            const stockRes = await client.query(
+                `SELECT COALESCE(SUM(l.cantidad_actual) FILTER (
+                    WHERE l.cantidad_actual > 0 AND l.fecha_vencimiento > CURRENT_DATE), 0)::INT AS disponible
+                 FROM lote_medicamento l
+                 WHERE l.id_medicamento = $1`,
+                [idMed]
+            );
+            const disponible = stockRes.rows[0].disponible;
+            if (disponible <= 0) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({
+                    error: `No hay stock disponible del medicamento. Revise el inventario.`
+                });
+            }
+            const aDispensar = Math.min(qty, disponible);
+
+            const presc = await client.query(
+                `INSERT INTO prescripcion (id_consulta, id_medicamento, cantidad_recetada, dosis, frecuencia, duracion_dias)
+                 VALUES ($1, $2, $3, $4, NULL, NULL)
+                 RETURNING id_prescripcion`,
+                [id_consulta, idMed, aDispensar, r.dosis || null]
+            );
+            const id_prescripcion = presc.rows[0].id_prescripcion;
+
+            // Descuento FIFO por lote (primero el que vence antes, sin vencidos)
+            const lotes = await client.query(
+                `SELECT id_lote, cantidad_actual
+                 FROM lote_medicamento
+                 WHERE id_medicamento = $1 AND cantidad_actual > 0 AND fecha_vencimiento > CURRENT_DATE
+                 ORDER BY fecha_vencimiento ASC, id_lote ASC`,
+                [idMed]
+            );
+
+            let restante = aDispensar;
+            for (const lote of lotes.rows) {
+                if (restante <= 0) break;
+                const tomado = Math.min(lote.cantidad_actual, restante);
+                await client.query(
+                    `UPDATE lote_medicamento SET cantidad_actual = cantidad_actual - $1 WHERE id_lote = $2`,
+                    [tomado, lote.id_lote]
+                );
+                await client.query(
+                    `INSERT INTO dispensacion (id_prescripcion, id_lote, cantidad_dispensada, id_usuario_dispensa)
+                     VALUES ($1, $2, $3, $4)`,
+                    [id_prescripcion, lote.id_lote, tomado, id_medico]
+                );
+                await client.query(
+                    `INSERT INTO movimiento_inventario (id_lote, tipo_movimiento, cantidad, motivo, id_usuario)
+                     VALUES ($1, 'salida', $2, $3, $4)`,
+                    [lote.id_lote, tomado, 'Dispensación en consulta médica', id_medico]
+                );
+                restante -= tomado;
+            }
+        }
+
+        await client.query(
             `UPDATE visita SET estado = 'completado' WHERE id_visita = $1`,
             [id_visita]
         );
 
-        await pool.query(
+        await client.query(
             `INSERT INTO bitacora (id_usuario, accion, tabla_afectada, id_registro_afectado, descripcion)
              VALUES ($1, 'REGISTRAR_CONSULTA', 'consulta_medica', $2, $3)`,
-            [id_medico, id_visita, `Diagnóstico: ${diagnostico?.substring(0, 100) || 'N/A'}`]
+            [id_medico, id_visita, `Diagnóstico: ${(diagnostico || 'N/A').substring(0, 100)}`]
         );
 
-        await pool.query('COMMIT');
+        await client.query('COMMIT');
         res.status(201).json(rows[0]);
     } catch (error) {
-        await pool.query('ROLLBACK');
+        await client.query('ROLLBACK');
         console.error(error);
         res.status(500).json({ error: 'Error al registrar consulta médica' });
+    } finally {
+        client.release();
     }
 });
 
@@ -606,10 +702,19 @@ app.get('/api/consulta_medica/:id_visita', async (req, res) => {
             [req.params.id_visita]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'Consulta no encontrada' });
-        res.json(rows[0]);
+        const con = rows[0];
+        const recetas = await pool.query(
+            `SELECT p.id_medicamento, m.nombre_medicamento AS nombre, p.cantidad_recetada AS cantidad, p.dosis
+             FROM prescripcion p
+             INNER JOIN medicamento m ON p.id_medicamento = m.id_medicamento
+             WHERE p.id_consulta = $1`,
+            [con.id_consulta]
+        );
+        con.recetas = recetas.rows;
+        res.json(con);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Error obteniendo consulta médica' });
+        res.status(500).json({ error: 'Error obteniendo consulta' });
     }
 });
 

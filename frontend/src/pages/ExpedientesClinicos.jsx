@@ -242,6 +242,9 @@ export default function ExpedientesClinicos() {
         linea("Signos vitales", vitales);
         linea("Diagnóstico", v.diagnostico);
         linea("Indicaciones", v.indicaciones);
+        if (v.recetas && v.recetas.length) {
+          linea("Dispensados", v.recetas.map(r => `${r.nombre} (${r.cantidad})`).join(", "));
+        }
         linea("Observaciones", v.observaciones);
         linea("Seguimiento", v.fecha_seguimiento ? new Date(v.fecha_seguimiento).toLocaleDateString("es-GT") : "");
         linea("Médico", v.nombre_medico);
@@ -347,6 +350,11 @@ export default function ExpedientesClinicos() {
     if (vitales.length) seccion("Signos Vitales", [vitales.join("  ·  ")]);
     if (v.diagnostico) seccion("Diagnóstico", [v.diagnostico]);
     if (v.indicaciones) seccion("Indicaciones / Tratamiento", [v.indicaciones]);
+    if (v.recetas && v.recetas.length) {
+      seccion("Medicamentos Dispensados (descontados del inventario)", v.recetas.map(r =>
+        `${r.nombre}  —  Cantidad: ${r.cantidad}${r.dosis ? `  ·  ${r.dosis}` : ""}`
+      ));
+    }
     if (v.observaciones) seccion("Observaciones", [v.observaciones]);
     if (v.fecha_seguimiento) seccion("Próxima Cita", [`${new Date(v.fecha_seguimiento).toLocaleDateString("es-GT")}`]);
 
@@ -690,6 +698,20 @@ export default function ExpedientesClinicos() {
                                   <div className="text-[11px] tracking-wide text-[#1e40af] mb-1">INDICACIONES</div>
                                   <p className="font-medium">{v.indicaciones || "—"}</p>
                                 </div>
+                                {v.recetas && v.recetas.length > 0 && (
+                                  <div>
+                                    <div className="text-[11px] tracking-wide text-[#1e40af] mb-1">MEDICAMENTOS DISPENSADOS</div>
+                                    <ul className="space-y-1">
+                                      {v.recetas.map((r, i) => (
+                                        <li key={i} className="flex items-center gap-2 text-sm font-medium">
+                                          <Pill size={14} className="text-[#00478d]" />
+                                          {r.nombre} <span className="text-[#424752]">· Cantidad: {r.cantidad}</span>
+                                          {r.dosis ? <span className="text-[#424752]">· {r.dosis}</span> : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
                                 {v.observaciones && (
                                   <div>
                                     <div className="text-[11px] tracking-wide text-[#1e40af] mb-1">OBSERVACIONES</div>
