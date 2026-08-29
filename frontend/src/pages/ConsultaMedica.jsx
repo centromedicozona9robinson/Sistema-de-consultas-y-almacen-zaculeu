@@ -206,7 +206,7 @@ export default function ConsultaMedica() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <VitalCard label="Presión" value={`${preconsulta.presion_sistolica || "—"}/${preconsulta.presion_diastolica || "—"}`} unit="mmHg" icon={HeartPulse} color="text-[#e53e3e]" alert={isAlert("presion_sistolica", preconsulta.presion_sistolica) || isAlert("presion_diastolica", preconsulta.presion_diastolica)} />
                 <VitalCard label="Peso" value={preconsulta.peso || "—"} unit="lb" icon={HeartPulse} color="text-[#805ad5]" />
-                <VitalCard label="Talla" value={preconsulta.talla || "—"} unit="m" icon={HeartPulse} color="text-[#d69e2e]" />
+                <VitalCard label="Altura" value={preconsulta.talla || "—"} unit="m" icon={HeartPulse} color="text-[#d69e2e]" />
                 <VitalCard label="IMC" value={preconsulta.imc || "—"} unit="" icon={HeartPulse} color="text-[#276749]" />
               </div>
               {preconsulta.alerta_signos && (

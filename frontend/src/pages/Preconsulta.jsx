@@ -17,7 +17,7 @@ const navItems = [
 const VITAL_RANGES = {
   presion_arterial: { label: "PRESIÓN ARTERIAL", unit: "mmHg", icon: HeartPulse, color: "#e53e3e", type: "text", placeholder: "120/80" },
   peso: { label: "PESO", unit: "lb", icon: Weight, color: "#805ad5", step: 0.1, min: 2, max: 660 },
-  talla: { label: "TALLA", unit: "m", icon: Ruler, color: "#d69e2e", step: 0.01, min: 0.3, max: 2.5 },
+  talla: { label: "ALTURA", unit: "m", icon: Ruler, color: "#d69e2e", step: 0.01, min: 0.3, max: 2.5 },
 };
 
 export default function Preconsulta() {

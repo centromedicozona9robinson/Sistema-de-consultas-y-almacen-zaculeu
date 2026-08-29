@@ -236,7 +236,7 @@ export default function ExpedientesClinicos() {
         const vitales = [
           v.presion_sistolica ? `Presión ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
           v.peso ? `Peso ${v.peso} lb` : "",
-          v.talla ? `Talla ${v.talla} m` : "",
+          v.talla ? `Altura ${v.talla} m` : "",
           v.imc ? `IMC ${v.imc}` : "",
         ].filter(Boolean).join("  ·  ");
         linea("Signos vitales", vitales);
@@ -341,7 +341,7 @@ export default function ExpedientesClinicos() {
     const vitales = [
       v.presion_sistolica ? `Presión arterial: ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
       v.peso ? `Peso: ${v.peso} lb` : "",
-      v.talla ? `Talla: ${v.talla} m` : "",
+      v.talla ? `Altura: ${v.talla} m` : "",
       v.imc ? `IMC: ${v.imc}` : "",
     ].filter(Boolean);
     if (vitales.length) seccion("Signos Vitales", [vitales.join("  ·  ")]);
@@ -665,7 +665,7 @@ export default function ExpedientesClinicos() {
                               <div className="grid grid-cols-2 gap-3 text-sm">
                                 <VitalDisplay label="Presión" value={`${v.presion_sistolica || "—"}/${v.presion_diastolica || "—"}`} unit="mmHg" />
                                 <VitalDisplay label="Peso" value={v.peso || "—"} unit="lb" />
-                                <VitalDisplay label="Talla" value={v.talla || "—"} unit="m" />
+                                <VitalDisplay label="Altura" value={v.talla || "—"} unit="m" />
                                 <VitalDisplay label="IMC" value={v.imc || "—"} unit="" />
                               </div>
                               {v.alerta_signos && (
