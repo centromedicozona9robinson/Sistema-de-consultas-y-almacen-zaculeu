@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Search, Bell, HelpCircle,
+  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Search,
   LogOut, Download, AlertTriangle, Activity, Pill, History, Calendar,
   FileText, Eye, HeartPulse, Stethoscope, Loader2, Users, Trash2,
   X, CheckCircle2,
 } from "lucide-react";
 import { api } from "../services/api";
 import { filtrarNav, roles, roleLabels } from "../services/permisos";
+import LogoMspas from "../components/LogoMspas";
 import { jsPDF } from "jspdf";
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutGrid, path: "/" },
   { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
@@ -390,7 +392,7 @@ export default function ExpedientesClinicos() {
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -416,19 +418,12 @@ export default function ExpedientesClinicos() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-[74px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="flex items-center gap-2 max-w-[500px] w-full bg-[#f2f4f6] border border-[#c2c6d4] rounded px-3.5 py-2 text-sm text-[#424752]">
-            <Search size={16} className="shrink-0" />
-            <input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder={id_paciente ? "Buscar en el historial..." : "Buscar por nombre o DPI..."}
-              className="outline-none bg-transparent w-full"
-            />
+        <header className="relative h-[74px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
+          <div />
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
           </div>
           <div className="flex items-center gap-5">
-            <Bell size={20} className="text-[#424752]" />
-            <HelpCircle size={20} className="text-[#424752]" />
             <div className="text-right">
               <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Usuario"}</div>
               <div className="text-xs text-[#424752] capitalize">{user.rol || "---"}</div>

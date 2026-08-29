@@ -1,13 +1,15 @@
 import React, { useState } from "react";
-import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, Bell, HelpCircle, LogOut, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, LogOut, Loader2, CheckCircle2, AlertCircle, HeartPulse } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { filtrarNav, roleLabels } from "../services/permisos";
+import LogoMspas from "../components/LogoMspas";
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutGrid, path: "/" },
   { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
@@ -57,7 +59,7 @@ export default function RegistroPacientes() {
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -78,11 +80,12 @@ export default function RegistroPacientes() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-[73px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="font-bold text-xl text-[#00478d]">Centro Médico Público de Zaculeu</div>
+        <header className="relative h-[73px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
+          <div />
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
+          </div>
           <div className="flex items-center gap-5">
-            <Bell size={20} className="text-[#424752]" />
-            <HelpCircle size={20} className="text-[#424752]" />
             <div className="w-9 h-9 rounded-full bg-[#d0e1fb] border border-[#c2c6d4] flex items-center justify-center font-bold text-[#00478d] text-sm">
               {(user.nombre || "U")[0]}
             </div>

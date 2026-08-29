@@ -26,7 +26,7 @@ export default function Login() {
     try {
       const data = await api.login(username, password);
       localStorage.setItem("auth", JSON.stringify(data.user));
-      navigate("/");
+      navigate(data.user.rol === "enfermera" ? "/preconsulta" : "/");
     } catch (err) {
       setError(err.message || "Credenciales incorrectas.");
     } finally {

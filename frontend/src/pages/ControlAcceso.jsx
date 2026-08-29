@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Shield, Package, Plus, Trash2, Pencil, LayoutGrid, UserPlus, FolderOpen, LogOut, Loader2, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Users, Shield, Package, Plus, Trash2, Pencil, LayoutGrid, UserPlus, FolderOpen, LogOut, Loader2, X, CheckCircle2, AlertCircle, HeartPulse } from "lucide-react";
 import { api } from "../services/api";
 import { filtrarNav, roleLabels } from "../services/permisos";
+import LogoMspas from "../components/LogoMspas";
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutGrid, path: "/" },
   { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
@@ -107,7 +109,7 @@ export default function ControlAcceso() {
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -128,8 +130,11 @@ export default function ControlAcceso() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-10 sticky top-0 z-10">
-          <div className="font-bold text-[22px] text-[#00478d]">Administración de Usuarios</div>
+        <header className="relative h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-10 sticky top-0 z-10">
+          <div />
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
+          </div>
           <div className="w-[38px] h-[38px] rounded-full bg-[#d0e1fb] border border-[#c2c6d4] flex items-center justify-center font-bold text-[#00478d]">A</div>
         </header>
 

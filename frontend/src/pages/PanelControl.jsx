@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from "react";
 import {
-  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Search, Bell, HelpCircle,
+  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Search,
   LogOut, Users, Clock, FileText, Calendar, Filter, Download, Eye, Pencil,
   Megaphone, AlertTriangle, Info, History, Loader2,
   Stethoscope, HeartPulse, UserCheck,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
+import LogoMspas from "../components/LogoMspas";
 
 const navItems = [
-  { label: "Panel de Control", icon: LayoutGrid, path: "/", roles: ["administrador", "director", "medico", "enfermera"] },
-  { label: "Registro de Pacientes", icon: UserPlus, path: "/registro", roles: ["administrador", "medico", "enfermera"] },
-  { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes", roles: ["administrador", "director", "medico", "enfermera"] },
+  { label: "Panel de Control", icon: LayoutGrid, path: "/", roles: ["administrador", "director", "medico"] },
+  { label: "Registro de Pacientes", icon: UserPlus, path: "/registro", roles: ["administrador", "director", "enfermera"] },
+  { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes", roles: ["administrador", "director", "medico"] },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta", roles: ["enfermera"] },
   { label: "Inventario", icon: Package, path: "/inventario", roles: ["administrador", "director"] },
-  { label: "Control de Acceso", icon: Shield, path: "/admin", roles: ["administrador", "director", "medico"] },
+  { label: "Control de Acceso", icon: Shield, path: "/admin", roles: ["administrador", "director"] },
 ];
 
 const roleLabels = {
@@ -107,7 +109,7 @@ export default function PanelControl() {
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[rol] || rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -128,28 +130,26 @@ export default function PanelControl() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-10 sticky top-0 z-10">
-          <div className="font-bold text-[22px] leading-tight text-[#00478d]">
-            Centro Médico Público<br />de Zaculeu
+        <header className="relative h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-10 sticky top-0 z-10">
+          <div className="flex items-center gap-2 w-[280px] bg-[#f2f4f6] border border-[#c2c6d4] rounded px-3.5 py-2.5 text-sm text-[#424752]">
+            <Search size={16} className="shrink-0" />
+            <input
+              value={busquedaExpediente}
+              onChange={(e) => setBusquedaExpediente(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const q = busquedaExpediente.trim();
+                  navigate(q ? `/expedientes?q=${encodeURIComponent(q)}` : "/expedientes");
+                }
+              }}
+              placeholder="Buscar expediente..."
+              className="outline-none bg-transparent w-full"
+            />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
           </div>
           <div className="flex items-center gap-5">
-            <div className="flex items-center gap-2 w-[280px] bg-[#f2f4f6] border border-[#c2c6d4] rounded px-3.5 py-2.5 text-sm text-[#424752]">
-              <Search size={16} className="shrink-0" />
-              <input
-                value={busquedaExpediente}
-                onChange={(e) => setBusquedaExpediente(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const q = busquedaExpediente.trim();
-                    navigate(q ? `/expedientes?q=${encodeURIComponent(q)}` : "/expedientes");
-                  }
-                }}
-                placeholder="Buscar expediente..."
-                className="outline-none bg-transparent w-full"
-              />
-            </div>
-            <Bell size={20} className="text-[#424752]" />
-            <HelpCircle size={20} className="text-[#424752]" />
             <div className="text-right mr-1">
               <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Usuario"}</div>
               <div className="text-xs text-[#424752] capitalize">{user.rol || "---"}</div>

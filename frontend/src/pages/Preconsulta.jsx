@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, Plus, Search, Bell, HelpCircle, LogOut, Loader2, CheckCircle2, AlertCircle, HeartPulse, Weight, Ruler, Calculator, Flag, AlertTriangle } from "lucide-react";
+import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, Plus, Search, LogOut, Loader2, CheckCircle2, AlertCircle, HeartPulse, Weight, Ruler, Calculator, Flag, AlertTriangle } from "lucide-react";
 import { api } from "../services/api";
-import { filtrarNav, roleLabels } from "../services/permisos";
+import { filtrarNav, roles, roleLabels } from "../services/permisos";
+import LogoMspas from "../components/LogoMspas";
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutGrid, path: "/" },
   { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
@@ -33,6 +35,7 @@ export default function Preconsulta() {
   const [alertas, setAlertas] = useState([]);
   const [feedback, setFeedback] = useState({ type: "", msg: "" });
   const [preconsultaExistente, setPreconsultaExistente] = useState(null);
+  const [cola, setCola] = useState(null);
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
   const nav = filtrarNav(user.rol, navItems);
@@ -44,9 +47,17 @@ export default function Preconsulta() {
 
   const fetchData = async () => {
     if (!id_visita && !id_paciente) {
+      try {
+        const v = await api.getVisitasHoy();
+        setCola(v.filter((x) => x.estado === "pendiente" || x.estado === "en_triaje"));
+      } catch (err) {
+        console.error(err);
+        setCola([]);
+      }
       setLoading(false);
       return;
     }
+    setCola(null);
     try {
       if (id_visita) {
         try {
@@ -165,14 +176,101 @@ export default function Preconsulta() {
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 size={32} className="animate-spin text-[#005eb8]" /></div>;
-  if (!paciente && !visita) return <div className="flex h-screen items-center justify-center text-[#ba1a1a]">Visita o paciente no especificado</div>;
+
+  if (!paciente && !visita) {
+    if (id_visita || id_paciente) {
+      return <div className="flex h-screen items-center justify-center text-[#ba1a1a]">Visita o paciente no encontrado</div>;
+    }
+    return (
+      <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
+        <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
+          <div className="p-4 overflow-y-auto">
+            <div className="pb-6">
+              <LogoMspas />
+              <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
+            </div>
+            <nav className="flex flex-col gap-1">
+              {nav.map(({ label, icon: Icon, path }) => (
+                <div key={label} onClick={() => navigate(path)} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md font-semibold text-sm cursor-pointer ${path === "/preconsulta" ? "bg-[#dceeee] text-[#006a71]" : "text-[#424752] hover:bg-[#f2f4f6]"}`}>
+                  <Icon size={18} />
+                  {label}
+                </div>
+              ))}
+            </nav>
+          </div>
+          <div className="p-4 border-t border-[#c2c6d4] flex flex-col gap-3 shrink-0">
+            <div onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm text-[#424752] hover:bg-[#f2f4f6] rounded-md cursor-pointer transition-colors">
+              <LogOut size={16} /> Cerrar Sesión
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex-1 flex flex-col h-full overflow-y-auto">
+          <header className="relative h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
+            <div />
+            <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+              Centro Médico Público de Zaculeu
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Enfermería"}</div>
+                <div className="text-xs text-[#424752] capitalize">{user.rol || "enfermera"}</div>
+              </div>
+              <div className="w-9 h-9 rounded-full bg-[#d0e1fb] border border-[#c2c6d4] flex items-center justify-center font-bold text-[#00478d] text-sm">
+                {(user.nombre || "E")[0]}
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 p-8 max-w-4xl mx-auto w-full">
+            <h1 className="font-bold text-3xl">Preconsultas del Día</h1>
+            <p className="text-sm text-[#424752] mt-1 mb-6">Selecciona un paciente en espera para tomar sus signos vitales.</p>
+            {cola === null ? null : cola.length === 0 ? (
+              <div className="bg-white border border-[#c2c6d4] rounded-xl text-center py-16">
+                <HeartPulse size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="font-semibold">No hay pacientes en espera</p>
+                <p className="text-sm mt-1">Los pacientes que se registren hoy aparecerán aquí.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {cola.map((v) => (
+                  <div key={v.id_visita} className="bg-white border border-[#c2c6d4] rounded-lg p-4 flex items-center gap-4 hover:border-[#006a71] transition-colors">
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${v.estado === "pendiente" ? "bg-[#ffdad6] text-[#ba1a1a]" : "bg-[#c7f0f4] text-[#006a71]"}`}>
+                      {(v.nombre_completo || "?").split(" ").map((n) => n[0]).slice(0, 2).join("")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold truncate">{v.nombre_completo}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap ${v.estado === "pendiente" ? "bg-[#ffdad6] text-[#ba1a1a]" : "bg-[#c7f0f4] text-[#006a71]"}`}>
+                          {v.estado === "pendiente" ? "PENDIENTE" : "EN TRIAJE"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-[#424752] mt-0.5">
+                        DPI: {v.dpi || "—"} · Edad: {v.edad ?? "—"} años · {new Date(v.fecha_visita).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/preconsulta?id_visita=${v.id_visita}`)}
+                      className="bg-[#006a71] hover:bg-[#004d56] text-white px-4 py-2 rounded-lg font-semibold text-sm whitespace-nowrap transition-colors"
+                    >
+                      Tomar Signos Vitales
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -192,8 +290,11 @@ export default function Preconsulta() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="font-bold text-xl text-[#00478d]">Preconsulta - Signos Vitales</div>
+        <header className="relative h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
+          <div />
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
+          </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Enfermería"}</div>
@@ -283,7 +384,7 @@ export default function Preconsulta() {
               <button type="submit" disabled={saving} className="px-6 py-2.5 bg-[#006a71] hover:bg-[#004d56] text-white rounded-lg font-bold transition-all disabled:opacity-60 flex items-center gap-2">
                 {saving ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : "Guardar Preconsulta"}
               </button>
-              {preconsultaExistente && (
+              {preconsultaExistente && roles.consulta.includes(user.rol) && (
                 <button type="button" onClick={goToConsulta} className="px-6 py-2.5 bg-[#005eb8] hover:bg-[#00478d] text-white rounded-lg font-bold transition-all flex items-center gap-2">
                   <HeartPulse size={16} /> Ir a Consulta Médica
                 </button>

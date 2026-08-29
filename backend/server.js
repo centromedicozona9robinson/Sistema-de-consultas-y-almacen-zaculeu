@@ -27,14 +27,28 @@ app.post('/api/auth/login', async (req, res) => {
         }
         const user = rows[0];
 
-        // Credenciales temporales (reemplazar con bcrypt en producción)
-        const credenciales = {
-            'DOC':   'Doctor1234',
-            'Enfer': 'Enfer1234',
-            'admin': 'Admin123!',
-        };
-
-        if (!credenciales[username] || credenciales[username] !== password) {
+        // Valida contra contrasena_hash (bcrypt). Si la cuenta aún tiene el hash
+        // placeholder de la semilla original, acepta la contraseña temporal y
+        // la migra automáticamente a un hash real.
+        const HASH_RE = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+        const esHashValido = HASH_RE.test(user.contrasena_hash || '');
+        let passOk = false;
+        if (esHashValido) {
+            passOk = await bcrypt.compare(password, user.contrasena_hash);
+        } else {
+            const legacy = {
+                'DOC':        'Doctor1234',
+                'Enfer':      'Enfer1234',
+                'admin':      'Admin123!',
+                'directora':  'Directora123!',
+            };
+            passOk = legacy[user.nombre_usuario] === password;
+            if (passOk) {
+                const nuevoHash = await bcrypt.hash(password, 10);
+                await pool.query('UPDATE usuario SET contrasena_hash = $1 WHERE id_usuario = $2', [nuevoHash, user.id_usuario]);
+            }
+        }
+        if (!passOk) {
             return res.status(401).json({ error: 'Contraseña incorrecta' });
         }
 
@@ -257,7 +271,7 @@ app.get('/api/usuarios', async (req, res) => {
     try {
         const { rows } = await pool.query(`
             SELECT u.id_usuario, u.nombre_completo, u.nombre_usuario,
-                   u.id_rol, u.contrasena_hash, u.activo, u.fecha_creacion, u.ultimo_acceso, r.nombre_rol
+                   u.id_rol, u.activo, u.fecha_creacion, u.ultimo_acceso, r.nombre_rol
             FROM usuario u
             INNER JOIN rol r ON u.id_rol = r.id_rol
             WHERE u.activo = TRUE

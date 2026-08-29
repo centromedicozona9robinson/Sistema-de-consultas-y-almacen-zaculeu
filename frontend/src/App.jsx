@@ -27,17 +27,29 @@ const RoleRoute = ({ roles, children }) => {
   return children;
 };
 
+// El panel principal redirige a enfermería a su módulo de preconsultas
+const HomeRoute = ({ children }) => {
+  const auth = JSON.parse(localStorage.getItem("auth") || "null");
+  if (!auth) {
+    return <Navigate to="/login" replace />;
+  }
+  if (auth.rol === "enfermera") {
+    return <Navigate to="/preconsulta" replace />;
+  }
+  return children;
+};
+
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<ProtectedRoute><PanelControl /></ProtectedRoute>} />
-        <Route path="/expedientes" element={<ProtectedRoute><ExpedientesClinicos /></ProtectedRoute>} />
-        <Route path="/registro" element={<ProtectedRoute><RegistroPacientes /></ProtectedRoute>} />
-        <Route path="/admin" element={<RoleRoute roles={["administrador", "director", "medico"]}><ControlAcceso /></RoleRoute>} />
+        <Route path="/" element={<ProtectedRoute><HomeRoute><PanelControl /></HomeRoute></ProtectedRoute>} />
+        <Route path="/expedientes" element={<RoleRoute roles={["administrador", "director", "medico"]}><ExpedientesClinicos /></RoleRoute>} />
+        <Route path="/registro" element={<RoleRoute roles={["administrador", "director", "enfermera"]}><RegistroPacientes /></RoleRoute>} />
+        <Route path="/admin" element={<RoleRoute roles={["administrador", "director"]}><ControlAcceso /></RoleRoute>} />
         <Route path="/preconsulta" element={<ProtectedRoute><Preconsulta /></ProtectedRoute>} />
-        <Route path="/consulta" element={<ProtectedRoute><ConsultaMedica /></ProtectedRoute>} />
+        <Route path="/consulta" element={<RoleRoute roles={["administrador", "director", "medico"]}><ConsultaMedica /></RoleRoute>} />
         <Route path="/inventario" element={<RoleRoute roles={["administrador", "director"]}><Inventario /></RoleRoute>} />
       </Routes>
     </Router>

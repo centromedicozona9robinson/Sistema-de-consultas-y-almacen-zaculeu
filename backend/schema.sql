@@ -43,11 +43,12 @@ CREATE TABLE IF NOT EXISTS usuario (
   ultimo_acceso     TIMESTAMP
 );
 
+-- Contraseñas iniciales: admin=Admin123!, directora=Directora123!, DOC=Doctor1234, Enfer=Enfer1234
 INSERT INTO usuario (nombre_completo, nombre_usuario, contrasena_hash, id_rol) VALUES
-  ('Administrador del Sistema', 'admin',    '$2b$10$placeholder_admin',          1),
-  ('Dra. Claudia Ramos',        'directora','$2b$10$placeholder_directora',      2),
-  ('Dr. Julián Ortega',         'DOC',      '$2b$10$placeholder_doctor',         3),
-  ('Ana López (Enfermería)',    'Enfer',    '$2b$10$placeholder_enfermera',      4)
+  ('Administrador del Sistema', 'admin',    '$2b$10$F8Sk8kjm1cts.LwRnOKm0uSiI8rLMHMfrYlO18DaHgV1GbLFCdbfu', 1),
+  ('Dra. Claudia Ramos',        'directora','$2b$10$fSg6BoCmdqZWN4XpManN/.fbcDyqOIQS5m0zNTxTIxH/ZMtHBWfG6', 2),
+  ('Dr. Julián Ortega',         'DOC',      '$2b$10$Xx89CAT3IFMhrF2fTtqMTe./9.O4EgU2hmrPLr0/mgSBJHka7wE6u', 3),
+  ('Ana López (Enfermería)',    'Enfer',    '$2b$10$Za.BM4XOm3DNDxIitqV55OYbnCmU9JBAsD7.0.3JtTC0BNQwm3/O6', 4)
 ON CONFLICT (nombre_usuario) DO NOTHING;
 
 -- ============================================================

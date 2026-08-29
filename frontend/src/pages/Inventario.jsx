@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Bell, HelpCircle, LogOut,
+  LayoutGrid, UserPlus, FolderOpen, Shield, Package, LogOut,
   Loader2, CheckCircle2, AlertCircle, Plus, X, Pill, Boxes, Archive,
-  AlertTriangle, CalendarDays, Truck, PackagePlus, ClipboardList, Pencil, Trash2,
+  AlertTriangle, CalendarDays, Truck, PackagePlus, ClipboardList, Pencil, Trash2, HeartPulse,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { filtrarNav, roleLabels } from "../services/permisos";
+import LogoMspas from "../components/LogoMspas";
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutGrid, path: "/" },
   { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
+  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
@@ -334,7 +336,7 @@ export default function Inventario() {
       <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
         <div className="p-4 overflow-y-auto">
           <div className="pb-6">
-            <div className="font-bold text-lg text-[#00478d]">CMP Zaculeu</div>
+            <LogoMspas />
             <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
           </div>
           <nav className="flex flex-col gap-1">
@@ -355,11 +357,12 @@ export default function Inventario() {
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="h-[73px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="font-bold text-xl text-[#00478d]">Centro Médico Público de Zaculeu</div>
+        <header className="relative h-[73px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
+          <div />
+          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
+            Centro Médico Público de Zaculeu
+          </div>
           <div className="flex items-center gap-5">
-            <Bell size={20} className="text-[#424752]" />
-            <HelpCircle size={20} className="text-[#424752]" />
             <div className="text-right mr-1">
               <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Usuario"}</div>
               <div className="text-xs text-[#424752] capitalize">{user.rol || "---"}</div>
