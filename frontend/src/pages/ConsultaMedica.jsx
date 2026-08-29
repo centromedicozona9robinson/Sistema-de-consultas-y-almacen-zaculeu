@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, Plus, Search, LogOut, Loader2, CheckCircle2, AlertCircle, FileText, Pill, Calendar, HeartPulse, ArrowLeft } from "lucide-react";
+import { LayoutGrid, UserPlus, FolderOpen, Shield, Package, Plus, Search, LogOut, Loader2, CheckCircle2, AlertCircle, FileText, Pill, Calendar, HeartPulse, ArrowLeft, X } from "lucide-react";
 import { api } from "../services/api";
 import { filtrarNav, roleLabels } from "../services/permisos";
 import LogoMspas from "../components/LogoMspas";
@@ -27,6 +27,9 @@ export default function ConsultaMedica() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", msg: "" });
+  const [showMedModal, setShowMedModal] = useState(false);
+  const [medicamentos, setMedicamentos] = useState([]);
+  const [medBusqueda, setMedBusqueda] = useState("");
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
   const nav = filtrarNav(user.rol, navItems);
@@ -80,6 +83,28 @@ export default function ConsultaMedica() {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
   };
 
+  const openMedModal = async () => {
+    setShowMedModal(true);
+    setMedBusqueda("");
+    if (medicamentos.length === 0) {
+      try {
+        const res = await api.getMedicamentos();
+        setMedicamentos(Array.isArray(res) ? res : res.data || []);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const addMedicamento = (m) => {
+    const nombre = m.nombre_medicamento || "";
+    const detalle = [m.concentracion, m.forma_farmaceutica].filter(Boolean).join(" ") || "";
+    const linea = `${nombre}${detalle ? " (" + detalle + ")" : ""} — indicar dosis, frecuencia y duración`;
+    const prev = form.indicaciones.trim();
+    const nuevo = prev ? prev + "\n- " + linea : "- " + linea;
+    setForm(f => ({ ...f, indicaciones: nuevo }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!id_visita || !user.id) {
@@ -127,6 +152,14 @@ export default function ConsultaMedica() {
     const r = ranges[key];
     return r && (val < r.min || val > r.max);
   };
+
+  const medicamentosFiltrados = medicamentos.filter(m => {
+    const q = medBusqueda.trim().toLowerCase();
+    if (!q) return true;
+    return [m.nombre_medicamento, m.nombre_generico, m.concentracion, m.forma_farmaceutica]
+      .filter(Boolean)
+      .some(v => v.toLowerCase().includes(q));
+  });
 
   return (
     <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
@@ -228,7 +261,16 @@ export default function ConsultaMedica() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-1.5">Indicaciones / Tratamiento</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-semibold">Indicaciones / Tratamiento</label>
+                <button
+                  type="button"
+                  onClick={openMedModal}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#005eb8] hover:bg-[#00478d] text-white text-xs font-semibold rounded-lg transition-colors"
+                >
+                  <Plus size={14} /> Agregar medicamento
+                </button>
+              </div>
               <textarea name="indicaciones" value={form.indicaciones} onChange={handleChange} rows={3}
                 className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all"
                 placeholder="Medicamentos, dosis, frecuencia, duración..." />
@@ -261,6 +303,60 @@ export default function ConsultaMedica() {
           </form>
         </main>
       </div>
+
+      {showMedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowMedModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#eceef0]">
+              <h2 className="font-bold text-lg text-[#00478d] flex items-center gap-2"><Pill size={20} /> Agregar medicamento</h2>
+              <button onClick={() => setShowMedModal(false)} className="p-1.5 rounded-md hover:bg-[#f2f4f6] text-[#424752]">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 border-b border-[#eceef0]">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#424752]" />
+                <input
+                  value={medBusqueda}
+                  onChange={(e) => setMedBusqueda(e.target.value)}
+                  autoFocus
+                  placeholder="Buscar por nombre, genérico o presentación..."
+                  className="w-full pl-9 pr-3 py-2.5 border border-[#c2c6d4] rounded-lg focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+              {medicamentos.length === 0 ? (
+                <div className="p-6 text-center text-[#424752]">Cargando medicamentos del inventario...</div>
+              ) : medicamentosFiltrados.length === 0 ? (
+                <div className="p-6 text-center text-[#424752]">No se encontraron medicamentos.</div>
+              ) : (
+                medicamentosFiltrados.map((m) => (
+                  <button
+                    key={m.id_medicamento}
+                    onClick={() => addMedicamento(m)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#f2f4f6] text-left transition-colors"
+                  >
+                    <div className="w-9 h-9 rounded-md bg-[#d0e1fb] flex items-center justify-center text-[#00478d] shrink-0">
+                      <Pill size={18} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{m.nombre_medicamento}</div>
+                      <div className="text-xs text-[#424752] truncate">
+                        {m.nombre_generico || "—"}
+                        {m.concentracion ? ` · ${m.concentracion}` : ""}
+                        {m.forma_farmaceutica ? ` · ${m.forma_farmaceutica}` : ""}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
