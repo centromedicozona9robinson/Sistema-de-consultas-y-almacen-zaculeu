@@ -256,4 +256,32 @@ export const api = {
     if (!res.ok) throw new Error('Error obteniendo resumen de inventario');
     return res.json();
   },
+
+  // ESTADÍSTICAS Y REPORTES
+  getEstadisticasVisitas: async (desde, hasta) => {
+    const q = new URLSearchParams({ desde, hasta }).toString();
+    const res = await fetch(`${API_URL}/estadisticas/visitas?${q}`);
+    if (!res.ok) throw new Error('Error obteniendo estadísticas de visitas');
+    return res.json();
+  },
+
+  getEstadisticasMedicamentos: async (desde, hasta) => {
+    const q = new URLSearchParams({ desde, hasta }).toString();
+    const res = await fetch(`${API_URL}/estadisticas/medicamentos?${q}`);
+    if (!res.ok) throw new Error('Error obteniendo estadísticas de medicamentos');
+    return res.json();
+  },
+
+  getEstadisticasDiagnosticos: async (desde, hasta) => {
+    const q = new URLSearchParams({ desde, hasta }).toString();
+    const res = await fetch(`${API_URL}/estadisticas/diagnosticos?${q}`);
+    if (!res.ok) throw new Error('Error obteniendo estadísticas de diagnósticos');
+    return res.json();
+  },
+
+  getEstadisticasPacientes: async () => {
+    const res = await fetch(`${API_URL}/estadisticas/pacientes`);
+    if (!res.ok) throw new Error('Error obteniendo estadísticas de pacientes');
+    return res.json();
+  },
 };

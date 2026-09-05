@@ -183,7 +183,7 @@ export default function ControlAcceso() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1">
-                          {esAdmin && (
+                          {esAdmin && u.nombre_usuario !== "admin" && (
                             <>
                               <button onClick={() => handleAbrirEditar(u)} className="text-[#005eb8] p-2 hover:bg-[#d0e1fb] rounded-md transition-colors" title="Editar usuario">
                                 <Pencil size={18} />

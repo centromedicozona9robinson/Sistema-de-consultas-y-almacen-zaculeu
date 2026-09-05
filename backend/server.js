@@ -10,11 +10,13 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Permite peticiones sin origen (curl, Postman) y orígenes en la lista
-        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        // Permite peticiones sin origen (curl, Postman), orígenes en la lista
+        // configurada (CORS_ORIGINS) y cualquier origen local (localhost/127.0.0.1).
+        const esLocal = origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || esLocal) {
             return callback(null, true);
         }
-        return callback(new Error('Origen no permitido por CORS'));
+        return callback(new Error(`Origen no permitido por CORS: ${origin}`));
     },
 }));
 
@@ -340,6 +342,13 @@ app.post('/api/usuarios', async (req, res) => {
 app.delete('/api/usuarios/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        const { rows: target } = await pool.query(
+            'SELECT nombre_usuario FROM usuario WHERE id_usuario = $1', [id]
+        );
+        if (target.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+        if (target[0].nombre_usuario === 'admin') {
+            return res.status(403).json({ error: 'La cuenta administradora principal no puede desactivarse. Es la fuente de acceso del sistema.' });
+        }
         await pool.query('UPDATE usuario SET activo = FALSE WHERE id_usuario = $1', [id]);
         res.json({ message: 'Usuario desactivado correctamente' });
     } catch (error) {
@@ -356,7 +365,16 @@ app.put('/api/usuarios/:id', async (req, res) => {
     try {
         let query = `UPDATE usuario SET nombre_completo = $1, nombre_usuario = $2, id_rol = $3`;
         const params = [nombre_completo, nombre_usuario, id_rol];
+        // La cuenta administradora principal (admin) es la fuente del sistema:
+        // su contraseña no puede cambiarse desde este módulo.
         if (contrasena && contrasena.trim()) {
+            const { rows: target } = await pool.query(
+                'SELECT nombre_usuario FROM usuario WHERE id_usuario = $1', [id]
+            );
+            if (target.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+            if (target[0].nombre_usuario === 'admin') {
+                return res.status(403).json({ error: 'La contraseña de la cuenta administradora principal no puede modificarse. Es la fuente de acceso del sistema.' });
+            }
             const hash = await bcrypt.hash(contrasena, 10);
             query += `, contrasena_hash = $4`;
             params.push(hash);
@@ -1068,6 +1086,159 @@ app.get('/api/inventario/resumen', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error obteniendo resumen de inventario' });
+    }
+});
+
+// ============================================================
+// ESTADÍSTICAS Y REPORTES
+// ============================================================
+
+// Rango de fechas por defecto: últimos 30 días
+const parseRango = (req) => {
+    const hoy = new Date();
+    const hace30 = new Date();
+    hace30.setDate(hoy.getDate() - 29);
+    const desde = req.query.desde || hace30.toISOString().slice(0, 10);
+    const hasta = req.query.hasta || hoy.toISOString().slice(0, 10);
+    return { desde, hasta };
+};
+
+// Visitas por día + resumen del período
+app.get('/api/estadisticas/visitas', async (req, res) => {
+    const { desde, hasta } = parseRango(req);
+    try {
+        const { rows: diario } = await pool.query(
+            `SELECT
+               serie.dia::DATE AS fecha,
+               COUNT(v.id_visita)::INT AS total,
+               COUNT(v.id_visita) FILTER (WHERE v.estado = 'pendiente')::INT AS pendientes,
+               COUNT(v.id_visita) FILTER (WHERE v.estado = 'en_triaje')::INT AS en_triaje,
+               COUNT(v.id_visita) FILTER (WHERE v.estado = 'completado')::INT AS completadas
+             FROM generate_series($1::DATE, $2::DATE, '1 day') AS serie(dia)
+             LEFT JOIN visita v ON v.fecha_visita::DATE = serie.dia::DATE
+             GROUP BY serie.dia::DATE
+             ORDER BY serie.dia::DATE ASC`,
+            [desde, hasta]
+        );
+        const { rows: resumen } = await pool.query(
+            `SELECT
+               COUNT(*)::INT AS total_visitas,
+               COUNT(DISTINCT v.id_paciente)::INT AS pacientes_unicos,
+               COUNT(*) FILTER (WHERE v.estado = 'completado')::INT AS consultas_completadas,
+               COUNT(*) FILTER (WHERE pr.alerta_signos = TRUE)::INT AS con_alertas
+             FROM visita v
+             LEFT JOIN preconsulta pr ON v.id_visita = pr.id_visita
+             WHERE v.fecha_visita::DATE BETWEEN $1 AND $2`,
+            [desde, hasta]
+        );
+        res.json({ diario, resumen: resumen[0] });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo estadísticas de visitas' });
+    }
+});
+
+// Top medicamentos más dispensados en el período
+app.get('/api/estadisticas/medicamentos', async (req, res) => {
+    const { desde, hasta } = parseRango(req);
+    try {
+        const { rows: top } = await pool.query(
+            `SELECT
+               m.nombre_medicamento AS nombre,
+               COALESCE(SUM(p.cantidad_recetada), 0)::INT AS veces_recetado,
+               COALESCE(SUM(d.cantidad_dispensada), 0)::INT AS unidades_dispensadas
+             FROM prescripcion p
+             INNER JOIN consulta_medica cm ON p.id_consulta = cm.id_consulta
+             INNER JOIN visita v ON cm.id_visita = v.id_visita
+             INNER JOIN medicamento m ON p.id_medicamento = m.id_medicamento
+             LEFT JOIN dispensacion d ON d.id_prescripcion = p.id_prescripcion
+             WHERE v.fecha_visita::DATE BETWEEN $1 AND $2
+             GROUP BY m.id_medicamento, m.nombre_medicamento
+             ORDER BY unidades_dispensadas DESC, veces_recetado DESC
+             LIMIT 10`,
+            [desde, hasta]
+        );
+        const { rows: total } = await pool.query(
+            `SELECT COALESCE(SUM(d.cantidad_dispensada), 0)::INT AS total_unidades
+             FROM dispensacion d
+             INNER JOIN prescripcion p ON d.id_prescripcion = p.id_prescripcion
+             INNER JOIN consulta_medica cm ON p.id_consulta = cm.id_consulta
+             INNER JOIN visita v ON cm.id_visita = v.id_visita
+             WHERE v.fecha_visita::DATE BETWEEN $1 AND $2`,
+            [desde, hasta]
+        );
+        res.json({ top, total_unidades: total[0].total_unidades });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo estadísticas de medicamentos' });
+    }
+});
+
+// Top diagnósticos más frecuentes en el período
+app.get('/api/estadisticas/diagnosticos', async (req, res) => {
+    const { desde, hasta } = parseRango(req);
+    try {
+        const { rows } = await pool.query(
+            `SELECT
+               (CASE WHEN NULLIF(TRIM(cm.diagnostico), '') IS NULL THEN 'Sin diagnóstico' ELSE TRIM(cm.diagnostico) END) AS diagnostico,
+               COUNT(*)::INT AS cantidad
+             FROM consulta_medica cm
+             INNER JOIN visita v ON cm.id_visita = v.id_visita
+             WHERE v.fecha_visita::DATE BETWEEN $1 AND $2
+             GROUP BY diagnostico
+             ORDER BY cantidad DESC, diagnostico ASC
+             LIMIT 10`,
+            [desde, hasta]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo estadísticas de diagnósticos' });
+    }
+});
+
+// Demografía de pacientes (sexo, edad, crónicos)
+app.get('/api/estadisticas/pacientes', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT
+               COUNT(*)::INT AS total_pacientes,
+               COUNT(*) FILTER (WHERE sexo = 'M')::INT AS masculinos,
+               COUNT(*) FILTER (WHERE sexo = 'F')::INT AS femeninos,
+               COUNT(*) FILTER (WHERE es_cronico = TRUE)::INT AS cronicos
+             FROM paciente
+             WHERE activo = TRUE`
+        );
+        const { rows: porEdad } = await pool.query(
+            `SELECT
+               (CASE
+                 WHEN edad < 15 THEN '0-14'
+                 WHEN edad < 30 THEN '15-29'
+                 WHEN edad < 45 THEN '30-44'
+                 WHEN edad < 60 THEN '45-59'
+                 ELSE '60+'
+               END) AS rango,
+               COUNT(*)::INT AS cantidad
+             FROM (SELECT DATE_PART('year', AGE(fecha_nacimiento))::INT AS edad
+                   FROM paciente WHERE activo = TRUE) t
+             GROUP BY rango
+             ORDER BY MIN(edad)`
+        );
+        const demografia = {
+            total_pacientes: rows[0].total_pacientes,
+            masculinos: rows[0].masculinos,
+            femeninos: rows[0].femeninos,
+            cronicos: rows[0].cronicos,
+            por_sexo: [
+                { nombre: 'Femenino', valor: rows[0].femeninos },
+                { nombre: 'Masculino', valor: rows[0].masculinos },
+            ],
+            por_edad: porEdad.map((r) => ({ ...r, rango: `${r.rango} años` })),
+        };
+        res.json(demografia);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo estadísticas de pacientes' });
     }
 });
 

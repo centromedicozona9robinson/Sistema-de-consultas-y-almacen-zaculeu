@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutGrid, UserPlus, FolderOpen, Shield, Package,
-  HeartPulse, Search, LogOut, Menu, X,
+  HeartPulse, Search, LogOut, Menu, X, BarChart3,
 } from "lucide-react";
 import { filtrarNav, roleLabels } from "../services/permisos";
 import LogoMspas from "./LogoMspas";
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
   { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
   { label: "Inventario", icon: Package, path: "/inventario" },
+  { label: "Estadísticas", icon: BarChart3, path: "/estadisticas" },
   { label: "Control de Acceso", icon: Shield, path: "/admin" },
 ];
 

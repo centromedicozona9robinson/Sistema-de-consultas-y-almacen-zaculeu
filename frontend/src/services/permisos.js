@@ -8,6 +8,7 @@ export const roles = {
   consulta: ["administrador", "director", "medico"],
   crearVisita: ["administrador", "medico", "enfermera"],
   inventario: ["administrador", "director"],
+  estadisticas: ["administrador", "director"],
 };
 
 export const roleLabels = {
@@ -23,6 +24,7 @@ export const filtrarNav = (rol, items) =>
     if (item.path === "/admin") return roles.admin.includes(rol);
     if (item.path === "/registro") return roles.registro.includes(rol);
     if (item.path === "/inventario") return roles.inventario.includes(rol);
+    if (item.path === "/estadisticas") return roles.estadisticas.includes(rol);
     if (item.path === "/expedientes") return roles.expedientes.includes(rol);
     if (item.path === "/preconsulta") return rol === "enfermera";
     if (item.path === "/") return rol !== "enfermera";
