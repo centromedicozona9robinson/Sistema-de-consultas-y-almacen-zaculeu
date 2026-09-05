@@ -35,23 +35,23 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f7f9fb] font-sans">
-      <div className="w-1/2 bg-[#005eb8] flex flex-col items-center justify-center text-white p-12 relative overflow-hidden">
+    <div className="flex flex-col lg:flex-row min-h-screen bg-[#f7f9fb] font-sans">
+      <div className="w-full lg:w-1/2 bg-[#005eb8] flex flex-col items-center justify-center text-white p-8 lg:p-12 relative overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-64 h-64 bg-white opacity-5 rounded-full blur-3xl"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-80 h-80 bg-white opacity-5 rounded-full blur-3xl"></div>
-        <HeartPulse size={90} className="mb-8 opacity-90 drop-shadow-lg" />
-        <h1 className="text-4xl font-bold mb-4 text-center tracking-tight">Centro Médico Público<br/>de Zaculeu</h1>
-        <p className="text-lg text-blue-100 text-center max-w-md leading-relaxed opacity-90">
+        <HeartPulse size={64} className="mb-5 lg:mb-8 opacity-90 drop-shadow-lg lg:size-[90px]" />
+        <h1 className="text-2xl lg:text-4xl font-bold mb-3 lg:mb-4 text-center tracking-tight">Centro Médico Público<br/>de Zaculeu</h1>
+        <p className="text-base lg:text-lg text-blue-100 text-center max-w-md leading-relaxed opacity-90">
           Sistema integral de pre-consultas y expedientes clínicos.
           Brindando atención eficiente y de calidad a nuestros pacientes.
         </p>
-        <div className="mt-8 text-blue-200 text-xs text-center opacity-70">
+        <div className="mt-6 lg:mt-8 text-blue-200 text-xs text-center opacity-70">
           Proyecto de Graduación I — Universidad Mariano Gálvez · 2026
         </div>
       </div>
 
-      <div className="w-1/2 flex items-center justify-center p-12">
-        <div className="w-full max-w-md bg-white border border-[#c2c6d4] rounded-2xl p-10 shadow-lg shadow-blue-900/5">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
+        <div className="w-full max-w-md bg-white border border-[#c2c6d4] rounded-2xl p-6 sm:p-10 shadow-lg shadow-blue-900/5">
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 bg-[#d0e1fb] text-[#00478d] rounded-2xl flex items-center justify-center rotate-3 transition-transform hover:rotate-0">
               <Stethoscope size={32} />

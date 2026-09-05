@@ -1,18 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Users, Shield, Package, Plus, Trash2, Pencil, LayoutGrid, UserPlus, FolderOpen, LogOut, Loader2, X, CheckCircle2, AlertCircle, HeartPulse } from "lucide-react";
+import { Users, Plus, Trash2, Pencil, Loader2, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { api } from "../services/api";
-import { filtrarNav, roleLabels } from "../services/permisos";
-import LogoMspas from "../components/LogoMspas";
-
-const navItems = [
-  { label: "Panel de Control", icon: LayoutGrid, path: "/" },
-  { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
-  { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
-  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
-  { label: "Inventario", icon: Package, path: "/inventario" },
-  { label: "Control de Acceso", icon: Shield, path: "/admin" },
-];
+import Layout from "../components/Layout";
 
 const rolBadge = {
   administrador: "bg-[#ffdad6] text-[#ba1a1a]",
@@ -22,7 +11,6 @@ const rolBadge = {
 };
 
 export default function ControlAcceso() {
-  const navigate = useNavigate();
   const [usuarios, setUsuarios] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,12 +25,6 @@ export default function ControlAcceso() {
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
   const esAdmin = user.rol === "administrador";
-  const nav = filtrarNav(user.rol, navItems);
-
-  const handleLogout = () => {
-    localStorage.removeItem("auth");
-    navigate("/login");
-  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -105,49 +87,16 @@ export default function ControlAcceso() {
   };
 
   return (
-    <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
-      <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
-        <div className="p-4 overflow-y-auto">
-          <div className="pb-6">
-            <LogoMspas />
-            <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
-          </div>
-          <nav className="flex flex-col gap-1">
-            {nav.map(({ label, icon: Icon, path }) => (
-              <div key={label} onClick={() => navigate(path)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md font-semibold text-sm cursor-pointer ${path === "/admin" ? "bg-[#d0e1fb] text-[#00478d]" : "text-[#424752] hover:bg-[#f2f4f6]"}`}>
-                <Icon size={18} />
-                {label}
-              </div>
-            ))}
-          </nav>
+    <Layout activePath="/admin">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+          <h1 className="font-bold text-2xl sm:text-3xl">Control de Acceso</h1>
+          <p className="text-[#424752] mt-1">Gestiona el personal con acceso al sistema.</p>
         </div>
-        <div className="p-4 border-t border-[#c2c6d4] flex flex-col gap-3 shrink-0">
-          <div onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm text-[#424752] hover:bg-[#f2f4f6] rounded-md cursor-pointer transition-colors">
-            <LogOut size={16} /> Cerrar Sesión
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="relative h-20 shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-10 sticky top-0 z-10">
-          <div />
-          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
-            Centro Médico Público de Zaculeu
-          </div>
-          <div className="w-[38px] h-[38px] rounded-full bg-[#d0e1fb] border border-[#c2c6d4] flex items-center justify-center font-bold text-[#00478d]">A</div>
-        </header>
-
-        <main className="flex-1 p-10">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="font-bold text-3xl">Control de Acceso</h1>
-              <p className="text-[#424752] mt-1">Gestiona el personal con acceso al sistema.</p>
-            </div>
-            <button onClick={() => setShowModal(true)} className="flex items-center gap-2 bg-[#005eb8] hover:bg-[#00478d] text-white px-5 py-2.5 rounded-lg font-semibold transition-colors">
-              <Plus size={18} /> Nuevo Usuario
-            </button>
-          </div>
+        <button onClick={() => setShowModal(true)} className="flex items-center justify-center gap-2 bg-[#005eb8] hover:bg-[#00478d] text-white px-5 py-2.5 rounded-lg font-semibold transition-colors self-start">
+          <Plus size={18} /> Nuevo Usuario
+        </button>
+      </div>
 
           {!esAdmin && (
             <div className="flex items-center gap-3 p-4 rounded-lg mb-6 font-semibold border-l-4 bg-[#ffdad6] text-[#ba1a1a] border-[#ba1a1a]">
@@ -194,7 +143,8 @@ export default function ControlAcceso() {
                 )}
               </div>
             ) : (
-              <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[860px]">
                 <thead className="bg-[#f2f4f6] border-b border-[#c2c6d4]">
                   <tr>
                     <th className="px-6 py-4 font-semibold text-sm text-[#424752]">PERSONAL</th>
@@ -249,15 +199,14 @@ export default function ControlAcceso() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
-        </main>
-      </div>
 
-      {/* Modal Nuevo Usuario */}
+        {/* Modal Nuevo Usuario */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 sm:p-8 relative">
             <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-[#424752] hover:bg-[#f2f4f6] p-1.5 rounded-md transition-colors">
               <X size={20} />
             </button>
@@ -301,8 +250,8 @@ export default function ControlAcceso() {
 
       {/* Modal Editar Usuario */}
       {editando && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 sm:p-8 relative">
             <button onClick={() => setEditando(null)} className="absolute top-4 right-4 text-[#424752] hover:bg-[#f2f4f6] p-1.5 rounded-md transition-colors">
               <X size={20} />
             </button>
@@ -348,8 +297,8 @@ export default function ControlAcceso() {
       )}
       {/* Modal Confirmar Desactivación */}
       {confirmarEliminar && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => !borrando && setConfirmarEliminar(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !borrando && setConfirmarEliminar(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 sm:p-8 relative" onClick={(e) => e.stopPropagation()}>
             <button onClick={() => !borrando && setConfirmarEliminar(null)} className="absolute top-4 right-4 text-[#424752] hover:bg-[#f2f4f6] p-1.5 rounded-md transition-colors">
               <X size={20} />
             </button>
@@ -379,6 +328,6 @@ export default function ControlAcceso() {
           </div>
         </div>
       )}
-    </div>
+      </Layout>
   );
 }

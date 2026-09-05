@@ -1,24 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  LayoutGrid, UserPlus, FolderOpen, Shield, Package, Search,
-  LogOut, Download, AlertTriangle, Activity, Pill, History, Calendar,
-  FileText, Eye, HeartPulse, Stethoscope, Loader2, Users, Trash2,
+  Search, Download, AlertTriangle, Activity, Pill, History, Calendar,
+  FileText, HeartPulse, Stethoscope, Loader2, Users, Trash2,
   X, CheckCircle2,
 } from "lucide-react";
 import { api } from "../services/api";
-import { filtrarNav, roles, roleLabels } from "../services/permisos";
-import LogoMspas from "../components/LogoMspas";
+import { roles } from "../services/permisos";
+import Layout from "../components/Layout";
 import { jsPDF } from "jspdf";
-
-const navItems = [
-  { label: "Panel de Control", icon: LayoutGrid, path: "/" },
-  { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
-  { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
-  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
-  { label: "Inventario", icon: Package, path: "/inventario" },
-  { label: "Control de Acceso", icon: Shield, path: "/admin" },
-];
 
 const statusStyles = {
   completado: "bg-[#d0e1fb] text-[#00478d]",
@@ -48,13 +38,7 @@ export default function ExpedientesClinicos() {
   const [feedback, setFeedback] = useState(null);
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
-  const nav = filtrarNav(user.rol, navItems);
   const puedeEliminar = ["administrador", "director"].includes(user.rol);
-
-  const handleLogout = () => {
-    localStorage.removeItem("auth");
-    navigate("/login");
-  };
 
   const fetchData = async () => {
     setPaciente(null);
@@ -396,52 +380,8 @@ export default function ExpedientesClinicos() {
   });
 
   return (
-    <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
-      <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
-        <div className="p-4 overflow-y-auto">
-          <div className="pb-6">
-            <LogoMspas />
-            <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
-          </div>
-          <nav className="flex flex-col gap-1">
-            {nav.map(({ label, icon: Icon, path }) => (
-              <div
-                key={label}
-                onClick={() => navigate(path)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md font-semibold text-sm cursor-pointer ${
-                  path === "/expedientes" ? "bg-[#d0e1fb] text-[#00478d]" : "text-[#424752] hover:bg-[#f2f4f6]"
-                }`}
-              >
-                <Icon size={18} />
-                {label}
-              </div>
-            ))}
-          </nav>
-        </div>
-        <div className="p-4 border-t border-[#c2c6d4] flex flex-col gap-3 shrink-0">
-          <div onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm text-[#424752] hover:bg-[#f2f4f6] rounded-md cursor-pointer transition-colors">
-            <LogOut size={16} /> Cerrar Sesión
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="relative h-[74px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div />
-          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
-            Centro Médico Público de Zaculeu
-          </div>
-          <div className="flex items-center gap-5">
-            <div className="text-right">
-              <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Usuario"}</div>
-              <div className="text-xs text-[#424752] capitalize">{user.rol || "---"}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-[#d0e1fb] border border-[#c2c6d4]" />
-          </div>
-        </header>
-
-        <main className="flex-1 p-10 max-w-[1160px] overflow-auto h-full">
-          {feedback && (
+    <Layout activePath="/expedientes">
+      {feedback && (
             <div className={`flex items-center gap-2 text-sm font-semibold px-4 py-3 rounded-lg border mb-5 ${feedback.startsWith("No se pudo") ? "bg-[#ffdad6] text-[#ba1a1a] border-[#f5a9a0]" : "bg-[#dcfce7] text-[#166534] border-[#86efac]"}`}>
               {feedback.startsWith("No se pudo") ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
               {feedback}
@@ -453,19 +393,16 @@ export default function ExpedientesClinicos() {
             </div>
           ) : !id_paciente ? (
             <div className="flex flex-col h-full">
-              <div className="flex items-start justify-between mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
                 <div>
-                  <h1 className="font-bold text-[26px]">Expedientes Clínicos</h1>
-                  <p className="text-sm text-[#424752] mt-1">Selecciona un paciente para ver su historial clínico.</p>
+                  <h1 className="font-bold text-2xl sm:text-3xl">Expedientes Clínicos</h1>
+                  <p className="text-[#424752] mt-1">Selecciona un paciente para ver su historial clínico.</p>
                 </div>
-                <div className="flex items-center gap-2 bg-white border border-[#c2c6d4] rounded-md px-4 py-2.5 text-sm text-[#424752]">
-                  <Search size={16} />
-                  <input
-                    value={busqueda}
-                    onChange={(e) => setBusqueda(e.target.value)}
+                <div className="flex items-center gap-2 bg-white border border-[#c2c6d4] rounded-md px-4 py-2.5 text-sm text-[#424752] w-full sm:w-72">
+                  <Search size={16} className="shrink-0" />
+                  <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
                     placeholder="Buscar por nombre o DPI..."
-                    className="outline-none bg-transparent w-64"
-                  />
+                    className="outline-none bg-transparent w-full" />
                 </div>
               </div>
               <div className="bg-white border border-[#c2c6d4] rounded-xl overflow-hidden shadow-sm">
@@ -476,9 +413,9 @@ export default function ExpedientesClinicos() {
                     <p className="text-sm mt-1">Registra pacientes nuevos desde la opción "Registro de Pacientes".</p>
                   </div>
                 ) : (
-                  <div className="max-h-[calc(100vh-300px)] overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:bg-[#005eb8] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-[#f2f4f6]">
-                    <table className="w-full text-left">
-                      <thead className="bg-[#f2f4f6] border-b border-[#c2c6d4] sticky top-0 z-10">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[860px]">
+                      <thead className="bg-[#f2f4f6] border-b border-[#c2c6d4]">
                         <tr>
                           {["PACIENTE", "DPI", "EDAD", "GÉNERO", "REGISTRADO", ...(puedeEliminar ? ["ACCIÓN"] : [])].map((h) => (
                             <th key={h} className="px-6 py-4 font-semibold text-sm text-[#424752]">{h}</th>
@@ -570,7 +507,7 @@ export default function ExpedientesClinicos() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-5 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-5">
             <InfoCard
               bg="bg-[#ffdad6]"
               titleColor="text-[#ba1a1a]"
@@ -595,7 +532,7 @@ export default function ExpedientesClinicos() {
           </div>
 
           <div className="bg-white border border-[#c2c6d4] rounded-lg p-7">
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
               <div className="flex items-center gap-2.5 font-bold text-xl">
                 <History size={20} /> Historial de Visitas
               </div>
@@ -727,7 +664,7 @@ export default function ExpedientesClinicos() {
                             </div>
                           )}
                         </div>
-                        <div className="flex gap-3 mt-4 pt-4 border-t border-[#eceef0]">
+                        <div className="flex flex-col sm:flex-row gap-3 mt-4 pt-4 border-t border-[#eceef0]">
                           {v.estado === "pendiente" && roles.triaje.includes(user.rol) && (
                             <button onClick={() => goToPreconsulta(v.id_visita)} className="flex-1 bg-[#006a71] hover:bg-[#004d56] text-white py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2">
                               <HeartPulse size={16} /> Ir a Triaje
@@ -759,11 +696,9 @@ export default function ExpedientesClinicos() {
           </div>
           </>
           )}
-        </main>
-      </div>
 
       {confirmarBorrar && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !borrando && setConfirmarBorrar(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !borrando && setConfirmarBorrar(null)}>
           <div className="bg-white rounded-xl p-6 w-[400px] max-w-[90vw] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="w-11 h-11 rounded-full bg-[#ffdad6] flex items-center justify-center text-[#ba1a1a] shrink-0">
@@ -805,7 +740,7 @@ export default function ExpedientesClinicos() {
           </div>
         </div>
       )}
-    </div>
+      </Layout>
   );
 }
 

@@ -1,22 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  LayoutGrid, UserPlus, FolderOpen, Shield, Package, LogOut,
   Loader2, CheckCircle2, AlertCircle, Plus, X, Pill, Boxes, Archive,
-  AlertTriangle, CalendarDays, Truck, PackagePlus, ClipboardList, Pencil, Trash2, HeartPulse,
+  AlertTriangle, CalendarDays, Truck, PackagePlus, ClipboardList, Pencil, Trash2,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
-import { filtrarNav, roleLabels } from "../services/permisos";
-import LogoMspas from "../components/LogoMspas";
-
-const navItems = [
-  { label: "Panel de Control", icon: LayoutGrid, path: "/" },
-  { label: "Registro de Pacientes", icon: UserPlus, path: "/registro" },
-  { label: "Expedientes Clínicos", icon: FolderOpen, path: "/expedientes" },
-  { label: "Preconsultas", icon: HeartPulse, path: "/preconsulta" },
-  { label: "Inventario", icon: Package, path: "/inventario" },
-  { label: "Control de Acceso", icon: Shield, path: "/admin" },
-];
+import Layout from "../components/Layout";
 
 const inicialMedicamento = {
   nombre_medicamento: "",
@@ -56,7 +44,6 @@ const tiposMovimientoStyle = {
 };
 
 export default function Inventario() {
-  const navigate = useNavigate();
   const [categorias, setCategorias] = useState([]);
   const [medicamentos, setMedicamentos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
@@ -86,12 +73,6 @@ export default function Inventario() {
   const [borrando, setBorrando] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
-  const nav = filtrarNav(user.rol, navItems);
-
-  const handleLogout = () => {
-    localStorage.removeItem("auth");
-    navigate("/login");
-  };
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -332,50 +313,13 @@ export default function Inventario() {
   ];
 
   return (
-    <div className="flex h-screen bg-[#f7f9fb] font-sans text-[#191c1e] overflow-hidden">
-      <aside className="w-[255px] h-full flex-shrink-0 bg-white border-r border-[#c2c6d4] flex flex-col justify-between">
-        <div className="p-4 overflow-y-auto">
-          <div className="pb-6">
-            <LogoMspas />
-            <div className="text-xs text-[#424752] mt-0.5 capitalize">{roleLabels[user.rol] || user.rol}</div>
-          </div>
-          <nav className="flex flex-col gap-1">
-            {nav.map(({ label, icon: Icon, path }) => (
-              <div key={label} onClick={() => navigate(path)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md font-semibold text-sm cursor-pointer ${path === "/inventario" ? "bg-[#d0e1fb] text-[#00478d]" : "text-[#424752] hover:bg-[#f2f4f6]"}`}>
-                <Icon size={18} />
-                {label}
-              </div>
-            ))}
-          </nav>
-        </div>
-        <div className="p-4 border-t border-[#c2c6d4] flex flex-col gap-3 shrink-0">
-          <div onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm text-[#424752] hover:bg-[#f2f4f6] rounded-md cursor-pointer transition-colors">
-            <LogOut size={16} /> Cerrar Sesión
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col h-full overflow-y-auto">
-        <header className="relative h-[73px] shrink-0 bg-white border-b border-[#c2c6d4] flex items-center justify-between px-8 sticky top-0 z-10">
-          <div />
-          <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-[#00478d] whitespace-nowrap">
-            Centro Médico Público de Zaculeu
-          </div>
-          <div className="flex items-center gap-5">
-            <div className="text-right mr-1">
-              <div className="font-bold text-sm text-[#00478d]">{user.nombre || "Usuario"}</div>
-              <div className="text-xs text-[#424752] capitalize">{user.rol || "---"}</div>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-[#d0e1fb] border border-[#c2c6d4] flex items-center justify-center font-bold text-[#00478d] text-sm">
-              {(user.nombre || "U")[0]}
-            </div>
-          </div>
-        </header>
-
-        <main className="flex-1 p-10">
-          <div className="mb-6">
-            <h1 className="font-bold text-3xl">Inventario de Medicamentos</h1>
+    <Layout
+      activePath="/inventario"
+      search={{ value: busqueda, onChange: (e) => setBusqueda(e.target.value), placeholder: "Buscar medicamento..." }}
+      mainClassName="p-6 xl:p-10"
+    >
+      <div className="mb-6">
+            <h1 className="font-bold text-2xl sm:text-3xl">Inventario de Medicamentos</h1>
             <p className="text-sm text-[#424752] mt-1">Catálogo de medicamentos, existencias por lote y movimientos de farmacia.</p>
           </div>
 
@@ -390,7 +334,7 @@ export default function Inventario() {
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-5 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5 mb-6">
             {stats.map((s) => (
               <StatCard key={s.label} label={s.label} value={s.value} valueColor={s.valueColor} icon={s.icon} iconBg={s.iconBg} borderColor={s.borderColor} />
             ))}
@@ -402,7 +346,7 @@ export default function Inventario() {
               <h2 className="font-bold text-xl">Registrar Nuevo Medicamento</h2>
             </div>
             <form onSubmit={handleSubmitMedicamento}>
-              <div className="grid grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 <div>
                   <label className="block text-sm font-semibold mb-1.5">Nombre del Medicamento <span className="text-[#ba1a1a]">*</span></label>
                   <input name="nombre_medicamento" required value={formMed.nombre_medicamento} onChange={handleChange}
@@ -427,7 +371,7 @@ export default function Inventario() {
                   </select>
                 </div>
                 {formMed.id_categoria === "nueva" && (
-                  <div className="col-span-3">
+                  <div className="col-span-full">
                     <label className="block text-sm font-semibold mb-1.5">Nombre de la Nueva Categoría <span className="text-[#ba1a1a]">*</span></label>
                     <input name="nueva_categoria" value={formMed.nueva_categoria} onChange={handleChange}
                       className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all"
@@ -475,7 +419,7 @@ export default function Inventario() {
                   </select>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setFormMed(inicialMedicamento)}
                   className="px-6 py-2.5 border border-[#c2c6d4] rounded-lg font-semibold text-[#424752] hover:bg-[#f2f4f6] transition-colors">
                   Limpiar
@@ -489,16 +433,10 @@ export default function Inventario() {
           </div>
 
           <div className="bg-white border border-[#c2c6d4] rounded-xl shadow-sm mb-6">
-            <div className="flex items-center justify-between p-6 pb-4">
+            <div className="flex items-center gap-2 p-6 pb-4">
               <div className="flex items-center gap-2">
                 <Archive size={22} className="text-[#005eb8]" />
                 <h2 className="font-bold text-xl">Existencias Actuales</h2>
-              </div>
-              <div className="flex items-center gap-2 w-[280px] bg-[#f2f4f6] border border-[#c2c6d4] rounded px-3.5 py-2.5 text-sm text-[#424752]">
-                <Archive size={16} className="shrink-0" />
-                <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Buscar medicamento..."
-                  className="outline-none bg-transparent w-full" />
               </div>
             </div>
 
@@ -514,7 +452,7 @@ export default function Inventario() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse min-w-[880px]">
                   <thead>
                     <tr className="text-left">
                       {["MEDICAMENTO", "CATEGORÍA", "CONCENTRACIÓN", "STOCK TOTAL", "PRÓX. VENCIMIENTO", "ESTADO", "ACCIONES"].map((h) => (
@@ -602,7 +540,7 @@ export default function Inventario() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse min-w-[760px]">
                   <thead>
                     <tr className="text-left">
                       {["FECHA", "MEDICAMENTO", "LOTE", "TIPO", "CANTIDAD", "MOTIVO", "USUARIO"].map((h) => (
@@ -631,12 +569,10 @@ export default function Inventario() {
               </div>
             )}
           </div>
-        </main>
-      </div>
 
       {loteModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setLoteModal(null)}>
-          <div className="bg-white rounded-xl w-[520px] max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setLoteModal(null)}>
+          <div className="bg-white rounded-xl w-full max-w-[520px] max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-[#c2c6d4]">
               <div>
                 <h2 className="font-bold text-xl">Ingresar Lote</h2>
@@ -684,7 +620,7 @@ export default function Inventario() {
                   </select>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setLoteModal(null)}
                   className="px-6 py-2.5 border border-[#c2c6d4] rounded-lg font-semibold text-[#424752] hover:bg-[#f2f4f6] transition-colors">
                   Cancelar
@@ -700,8 +636,8 @@ export default function Inventario() {
       )}
 
       {editModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => !guardandoEdit && setEditModal(null)}>
-          <div className="bg-white rounded-xl w-[720px] max-w-[95vw] max-h-[92vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !guardandoEdit && setEditModal(null)}>
+          <div className="bg-white rounded-xl w-full max-w-[720px] max-h-[92vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-[#c2c6d4]">
               <div>
                 <h2 className="font-bold text-xl">Editar Medicamento</h2>
@@ -710,7 +646,7 @@ export default function Inventario() {
               <button onClick={() => !guardandoEdit && setEditModal(null)} className="text-[#424752] hover:text-[#191c1e] p-1"><X size={20} /></button>
             </div>
             <form onSubmit={handleGuardarEdicion} className="p-6">
-              <div className="grid grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 <div>
                   <label className="block text-sm font-semibold mb-1.5">Nombre del Medicamento <span className="text-[#ba1a1a]">*</span></label>
                   <input name="nombre_medicamento" required value={formEdit.nombre_medicamento} onChange={handleChangeEdit}
@@ -733,7 +669,7 @@ export default function Inventario() {
                   </select>
                 </div>
                 {formEdit.id_categoria === "nueva" && (
-                  <div className="col-span-3">
+                  <div className="col-span-full">
                     <label className="block text-sm font-semibold mb-1.5">Nombre de la Nueva Categoría <span className="text-[#ba1a1a]">*</span></label>
                     <input name="nueva_categoria" value={formEdit.nueva_categoria} onChange={handleChangeEdit}
                       className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all" />
@@ -778,7 +714,7 @@ export default function Inventario() {
                   </select>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setEditModal(null)} disabled={guardandoEdit}
                   className="px-6 py-2.5 border border-[#c2c6d4] rounded-lg font-semibold text-[#424752] hover:bg-[#f2f4f6] transition-colors disabled:opacity-50">
                   Cancelar
@@ -794,8 +730,8 @@ export default function Inventario() {
       )}
 
       {lotesModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setLotesModal(null)}>
-          <div className="bg-white rounded-xl w-[760px] max-w-[95vw] max-h-[92vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setLotesModal(null)}>
+          <div className="bg-white rounded-xl w-full max-w-[760px] max-h-[92vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-[#c2c6d4]">
               <div>
                 <h2 className="font-bold text-xl">Lotes de {lotesModal.nombre_medicamento}</h2>
@@ -868,7 +804,7 @@ export default function Inventario() {
       )}
 
       {confirmarEliminarLote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !borrando && setConfirmarEliminarLote(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !borrando && setConfirmarEliminarLote(null)}>
           <div className="bg-white rounded-xl p-6 w-[400px] max-w-[90vw] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="w-11 h-11 rounded-full bg-[#ffdad6] flex items-center justify-center text-[#ba1a1a] shrink-0">
@@ -901,7 +837,7 @@ export default function Inventario() {
       )}
 
       {confirmarEliminar && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !borrando && setConfirmarEliminar(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !borrando && setConfirmarEliminar(null)}>
           <div className="bg-white rounded-xl p-6 w-[400px] max-w-[90vw] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="w-11 h-11 rounded-full bg-[#ffdad6] flex items-center justify-center text-[#ba1a1a] shrink-0">
@@ -932,7 +868,7 @@ export default function Inventario() {
           </div>
         </div>
       )}
-    </div>
+      </Layout>
   );
 }
 
