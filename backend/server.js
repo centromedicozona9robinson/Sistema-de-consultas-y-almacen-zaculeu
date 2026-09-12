@@ -1094,12 +1094,18 @@ app.get('/api/inventario/resumen', async (req, res) => {
 // ============================================================
 
 // Rango de fechas por defecto: últimos 30 días
+const fechaLocalISO = (d) => {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
 const parseRango = (req) => {
     const hoy = new Date();
     const hace30 = new Date();
     hace30.setDate(hoy.getDate() - 29);
-    const desde = req.query.desde || hace30.toISOString().slice(0, 10);
-    const hasta = req.query.hasta || hoy.toISOString().slice(0, 10);
+    const desde = req.query.desde || fechaLocalISO(hace30);
+    const hasta = req.query.hasta || fechaLocalISO(hoy);
     return { desde, hasta };
 };
 
@@ -1109,7 +1115,7 @@ app.get('/api/estadisticas/visitas', async (req, res) => {
     try {
         const { rows: diario } = await pool.query(
             `SELECT
-               serie.dia::DATE AS fecha,
+               TO_CHAR(serie.dia::DATE, 'YYYY-MM-DD') AS fecha,
                COUNT(v.id_visita)::INT AS total,
                COUNT(v.id_visita) FILTER (WHERE v.estado = 'pendiente')::INT AS pendientes,
                COUNT(v.id_visita) FILTER (WHERE v.estado = 'en_triaje')::INT AS en_triaje,
@@ -1187,13 +1193,40 @@ app.get('/api/estadisticas/diagnosticos', async (req, res) => {
              WHERE v.fecha_visita::DATE BETWEEN $1 AND $2
              GROUP BY diagnostico
              ORDER BY cantidad DESC, diagnostico ASC
-             LIMIT 10`,
+             LIMIT 50`,
             [desde, hasta]
         );
         res.json(rows);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error obteniendo estadísticas de diagnósticos' });
+    }
+});
+
+// Mapa de brotes por zona: pacientes con diagnóstico en el período.
+// Devuelve la dirección completa; la ubicación (zona o aldea) se resuelve en
+// el frontend para soportar "Zona Nueve", aldeas, etc.
+app.get('/api/estadisticas/mapa', async (req, res) => {
+    const { desde, hasta } = parseRango(req);
+    try {
+        const { rows } = await pool.query(
+            `SELECT
+               p.nombre_completo,
+               p.direccion,
+               TRIM(cm.diagnostico) AS diagnostico,
+               TO_CHAR(v.fecha_visita::DATE, 'YYYY-MM-DD') AS fecha
+             FROM consulta_medica cm
+             INNER JOIN visita v   ON cm.id_visita = v.id_visita
+             INNER JOIN paciente p ON v.id_paciente = p.id_paciente
+             WHERE v.fecha_visita::DATE BETWEEN $1 AND $2
+               AND NULLIF(TRIM(cm.diagnostico), '') IS NOT NULL
+             ORDER BY v.fecha_visita DESC`,
+            [desde, hasta]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo datos del mapa de brotes' });
     }
 });
 

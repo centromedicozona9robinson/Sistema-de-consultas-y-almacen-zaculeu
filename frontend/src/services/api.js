@@ -284,4 +284,11 @@ export const api = {
     if (!res.ok) throw new Error('Error obteniendo estadísticas de pacientes');
     return res.json();
   },
+
+  getEstadisticasMapa: async (desde, hasta) => {
+    const q = new URLSearchParams({ desde, hasta }).toString();
+    const res = await fetch(`${API_URL}/estadisticas/mapa?${q}`);
+    if (!res.ok) throw new Error('Error obteniendo datos del mapa de brotes');
+    return res.json();
+  },
 };

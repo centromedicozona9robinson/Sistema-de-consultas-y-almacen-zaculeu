@@ -146,7 +146,7 @@ export default function Layout({ activePath, search, mainClassName = "p-6 xl:p-1
           </div>
           {search && (
             <div className="sm:hidden px-3 pb-3">
-              <SearchBox autoFocus />
+              <SearchBox />
             </div>
           )}
         </header>

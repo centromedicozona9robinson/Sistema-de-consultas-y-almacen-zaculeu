@@ -89,10 +89,10 @@ CREATE INDEX IF NOT EXISTS idx_paciente_dpi      ON paciente(dpi);
 CREATE INDEX IF NOT EXISTS idx_paciente_cronico  ON paciente(es_cronico);
 
 INSERT INTO paciente (nombre_completo, dpi, fecha_nacimiento, sexo, direccion, es_cronico, enfermedades_cronicas, alergias, medicamentos_actuales, id_usuario_registro) VALUES
-  ('Ricardo Morales',    '2987123450101', '1990-03-15', 'M', 'Zaculeu, Hue.', TRUE,  'Hipertensión Arterial, Rinitis Alérgica', 'Penicilina (Grave), Polen', 'Enalapril 10mg/12h, Cetirizina 10mg/noche', 4),
-  ('Ana Lucía González', '3050987650901', '1996-07-22', 'F', 'Zaculeu, Hue.', FALSE, NULL, NULL, NULL, 4),
-  ('Jorge Pérez',        '1890223340101', '1962-11-08', 'M', 'Zaculeu, Hue.', TRUE,  'Diabetes Tipo 2', NULL, 'Metformina 850mg/día', 4),
-  ('María Velásquez',    '3122556671301', '2005-04-30', 'F', 'Zaculeu, Hue.', FALSE, NULL, NULL, NULL, 4)
+  ('Ricardo Morales',    '2987123450101', '1990-03-15', 'M', 'Zona 9, Zaculeu, Huehuetenango', TRUE,  'Hipertensión Arterial, Rinitis Alérgica', 'Penicilina (Grave), Polen', 'Enalapril 10mg/12h, Cetirizina 10mg/noche', 4),
+  ('Ana Lucía González', '3050987650901', '1996-07-22', 'F', 'Zona 3, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL, 4),
+  ('Jorge Pérez',        '1890223340101', '1962-11-08', 'M', 'Zona 10, Zaculeu, Huehuetenango', TRUE,  'Diabetes Tipo 2', NULL, 'Metformina 850mg/día', 4),
+  ('María Velásquez',    '3122556671301', '2005-04-30', 'F', 'Zona 5, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL, 4)
 ON CONFLICT (dpi) DO NOTHING;
 
 -- ============================================================
