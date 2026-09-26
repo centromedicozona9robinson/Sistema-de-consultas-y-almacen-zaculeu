@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS paciente (
   fecha_nacimiento      DATE          NOT NULL,
   sexo                  CHAR(1)       NOT NULL CHECK (sexo IN ('M','F')),
   direccion             VARCHAR(250),
+  lat                   DOUBLE PRECISION,
+  lng                   DOUBLE PRECISION,
   telefono              VARCHAR(15),
   es_cronico            BOOLEAN       NOT NULL DEFAULT FALSE,
   alergias              TEXT,
@@ -308,6 +310,17 @@ CREATE TABLE IF NOT EXISTS dispensacion (
   id_usuario_dispensa INT           REFERENCES usuario(id_usuario),
   fecha_hora          TIMESTAMP     NOT NULL DEFAULT NOW(),
   observaciones       VARCHAR(250)
+);
+
+-- Caché de geocodificación: coordena resultados de Nominatim por dirección para
+-- no repetir llamadas externas en cada carga de la pestaña de estadísticas
+-- (el servidor la crea automáticamente en el arranque si no existe).
+CREATE TABLE IF NOT EXISTS geocodigo_cache (
+  direccion TEXT             PRIMARY KEY,
+  lat       DOUBLE PRECISION,
+  lng       DOUBLE PRECISION,
+  lugar     TEXT,
+  fecha     TIMESTAMP         NOT NULL DEFAULT NOW()
 );
 
 INSERT INTO categoria_medicamento (nombre_categoria, descripcion) VALUES

@@ -136,7 +136,8 @@ const colorPorDiagnostico = (norm) => {
 const UMBRAL_BROTE = 5;
 
 // Resuelve la localidad de una dirección: primero "Zona N" (número o palabra),
-// luego lugares del catálogo (aldeas/municipios como Chiantla) por palabra clave.
+// luego lugares del catálogo (aldeas/municipios como Chiantla) por palabra clave,
+// y por último las coordenadas exactas geocodificadas por el backend.
 const extraerLocalidad = (direccion) => {
   if (!direccion) return null;
   const patZona =
@@ -154,6 +155,23 @@ const extraerLocalidad = (direccion) => {
   return null;
 };
 
+// Resuelve una fila del mapa a una ubicación dibujable:
+// catálogo (zona/lugar) o coordenadas geocodificadas del backend.
+const resolverUbicacion = (fila) => {
+  const loc = extraerLocalidad(fila.direccion);
+  if (loc) return loc;
+  if (fila.lat != null && fila.lng != null) {
+    const nombre = fila.lugar || fila.direccion;
+    return {
+      clave: `GEO|${fila.direccion}`,
+      nombre,
+      lat: Number(fila.lat),
+      lng: Number(fila.lng),
+    };
+  }
+  return null;
+};
+
 const tooltipStyle = {
   backgroundColor: "#ffffff",
   border: "1px solid #c2c6d4",
@@ -167,6 +185,7 @@ export default function Estadisticas() {
   const [desde, setDesde] = useState(inicioISO(30));
   const [hasta, setHasta] = useState(hoyISO());
   const [loading, setLoading] = useState(true);
+  const [cargandoMapa, setCargandoMapa] = useState(false);
   const [error, setError] = useState(null);
   const [visitas, setVisitas] = useState({ diario: [], resumen: {} });
   const [medicamentos, setMedicamentos] = useState({ top: [], total_unidades: 0 });
@@ -181,18 +200,16 @@ export default function Estadisticas() {
     setLoading(true);
     setError(null);
     try {
-      const [v, m, diag, p, mp] = await Promise.all([
+      const [v, m, diag, p] = await Promise.all([
         api.getEstadisticasVisitas(d, h),
         api.getEstadisticasMedicamentos(d, h),
         api.getEstadisticasDiagnosticos(d, h),
         api.getEstadisticasPacientes(),
-        api.getEstadisticasMapa(d, h),
       ]);
       setVisitas(v);
       setMedicamentos(m);
       setDiagnosticos(diag);
       setPacientes(p);
-      setMapa(mp);
     } catch (err) {
       console.error(err);
       setError("No se pudieron cargar las estadísticas. Verifique la conexión con el backend.");
@@ -201,8 +218,24 @@ export default function Estadisticas() {
     }
   };
 
+  // El mapa de brotes se carga en paralelo, de forma independiente: no bloquea
+  // el render de las tarjetas y gráficas del resto de la página.
+  const cargarMapa = async (d, h) => {
+    setCargandoMapa(true);
+    setMapa([]);
+    try {
+      const mp = await api.getEstadisticasMapa(d, h);
+      setMapa(mp);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCargandoMapa(false);
+    }
+  };
+
   useEffect(() => {
     cargarDatos(desde, hasta);
+    cargarMapa(desde, hasta);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -213,6 +246,7 @@ export default function Estadisticas() {
     setDesde(d);
     setHasta(h);
     cargarDatos(d, h);
+    cargarMapa(d, h);
   };
 
   const kpis = [
@@ -273,7 +307,7 @@ export default function Estadisticas() {
   const mapaGrupos = useMemo(() => {
     const conUbicacion = [];
     (mapa || []).forEach((r) => {
-      const loc = extraerLocalidad(r.direccion);
+      const loc = resolverUbicacion(r);
       if (!loc) return;
       conUbicacion.push({
         r,
@@ -416,7 +450,10 @@ export default function Estadisticas() {
               className="text-sm outline-none bg-transparent"
             />
             <button
-              onClick={() => cargarDatos(desde, hasta)}
+              onClick={() => {
+                cargarDatos(desde, hasta);
+                cargarMapa(desde, hasta);
+              }}
               className="p-1.5 rounded-md bg-[#d0e1fb] text-[#00478d] hover:bg-[#c3d7f2] transition-colors"
               title="Aplicar rango"
             >
@@ -635,10 +672,10 @@ export default function Estadisticas() {
 
           <Card
             title="Mapa de brotes por zona"
-            subtitle="Pacientes con diagnóstico registrado, ubicados según la zona de su dirección. Pasa el cursor sobre un círculo para ver el padecimiento y las personas"
+            subtitle="Pacientes con diagnóstico registrado, ubicados según su dirección. Las direcciones libres se ubican automáticamente en el mapa real (geocodificación OpenStreetMap). Solo se muestran padecimientos con 5 o más pacientes"
             className="xl:col-span-2"
           >
-            {loading ? (
+            {cargandoMapa ? (
               <EmptyChart texto="Cargando mapa..." />
             ) : (
               <MapaBrotes

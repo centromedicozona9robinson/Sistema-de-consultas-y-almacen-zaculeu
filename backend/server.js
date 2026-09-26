@@ -24,6 +24,24 @@ app.use(express.json());
 
 const pool = require('./config/db');
 
+// Caché persistente de geocodificación: evita repetir llamadas a Nominatim
+// en cada carga de estadísticas y sobrevive a reinicios del servidor.
+(async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS geocodigo_cache (
+                direccion TEXT PRIMARY KEY,
+                lat DOUBLE PRECISION,
+                lng DOUBLE PRECISION,
+                lugar TEXT,
+                fecha TIMESTAMP DEFAULT NOW()
+            )
+        `);
+    } catch (error) {
+        console.error('No se pudo crear la tabla de caché de geocodificación:', error.message);
+    }
+})();
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -166,15 +184,15 @@ app.get('/api/patients', async (req, res) => {
 });
 
 app.post('/api/patients', async (req, res) => {
-    const { nombre_completo, dpi, fecha_nacimiento, sexo, telefono, direccion, id_usuario_registro } = req.body;
+    const { nombre_completo, dpi, fecha_nacimiento, sexo, telefono, direccion, lat, lng, id_usuario_registro } = req.body;
     if (!nombre_completo || !fecha_nacimiento || !sexo) {
         return res.status(400).json({ error: 'Faltan campos obligatorios: nombre_completo, fecha_nacimiento y sexo' });
     }
     try {
         const { rows } = await pool.query(
-            `INSERT INTO paciente (nombre_completo, dpi, fecha_nacimiento, sexo, telefono, direccion, id_usuario_registro)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_paciente`,
-            [nombre_completo, dpi || null, fecha_nacimiento, sexo, telefono || null, direccion || null, id_usuario_registro || 1]
+            `INSERT INTO paciente (nombre_completo, dpi, fecha_nacimiento, sexo, telefono, direccion, lat, lng, id_usuario_registro)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_paciente`,
+            [nombre_completo, dpi || null, fecha_nacimiento, sexo, telefono || null, direccion || null, lat ?? null, lng ?? null, id_usuario_registro || 1]
         );
         await pool.query(
             `INSERT INTO bitacora (id_usuario, accion, tabla_afectada, id_registro_afectado, descripcion)
@@ -1203,16 +1221,216 @@ app.get('/api/estadisticas/diagnosticos', async (req, res) => {
     }
 });
 
+// Geocodificación de direcciones libres con Nominatim (OpenStreetMap).
+// Las "Zona N" se resuelven con el catálogo del frontend; el resto intenta
+// ubicarse en el mapa real del área de Huehuetenango. Resultados en caché.
+const geocodeCache = new Map();
+const geocodePatronZona = /zona\s*(\d{1,2}|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\b/i;
+// Área acotada a Huehuetenango y alrededores para privilegiar resultados locales
+const GEOCODE_VIEWBOX = '-91.65,15.42,-91.38,15.16';
+const GEOCODE_DELAY_MS = 1100;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Limpia una dirección "conversacional" para mejorar el acierto de Nominatim:
+// quita la ciudad repetida al inicio y muletillas ("atras del", "junto a"...).
+const prefijosRuido = [
+    "atras del", "atras de", "detras del", "detras de", "tras del", "tras de",
+    "junto al", "junto a", "al lado del", "al lado de", "a un lado del",
+    "a un lado de", "cerca del", "cerca de", "frente al", "frente a",
+    "enfrente de", "en el", "en la", "en un", "del lado de",
+];
+const ciudadInicial = /^(?:huhuetenango|huehuetenango|guatemala)\b[,\s-]*/i;
+
+const limpiarConsulta = (direccion) => {
+    let s = (direccion || '').trim();
+    s = s.replace(ciudadInicial, '');
+    for (;;) {
+        let t = s;
+        for (const p of prefijosRuido) {
+            const re = new RegExp(
+                '^' + p.replace(/\s+/g, '\\s+') + '\\b[,\\s]*',
+                'i'
+            );
+            if (re.test(t)) {
+                t = t.replace(re, '');
+                break;
+            }
+        }
+        const reSuelto = /^(?:de\s+la|del|de|a\s+la|al)\s+/i;
+        if (/^(?:de\s+la|del|de|a\s+la|al)\s+/i.test(t)) {
+            t = t.replace(reSuelto, '');
+        }
+        if (t === s) break;
+        s = t;
+    }
+    return s.trim();
+};
+
+const geocodificarDireccion = async (direccion) => {
+    if (!direccion || geocodePatronZona.test(direccion)) return null;
+    if (geocodeCache.has(direccion)) return geocodeCache.get(direccion);
+
+    // Revisa primero el caché persistente (evita llamadas a Nominatim)
+    try {
+        const { rows } = await pool.query(
+            'SELECT lat, lng, lugar FROM geocodigo_cache WHERE direccion = $1', [direccion]
+        );
+        if (rows.length) {
+            const r = rows[0];
+            const val = r.lat != null && r.lng != null
+                ? { lat: Number(r.lat), lng: Number(r.lng), lugar: r.lugar }
+                : null;
+            geocodeCache.set(direccion, val);
+            return val;
+        }
+    } catch (error) {
+        // si el caché falla, continúa con la geocodificación normal
+    }
+
+    const guardarCache = (direccion, resultado) => {
+        geocodeCache.set(direccion, resultado);
+        pool.query(
+            `INSERT INTO geocodigo_cache (direccion, lat, lng, lugar)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (direccion) DO UPDATE SET
+                lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+                lugar = EXCLUDED.lugar, fecha = NOW()`,
+            [direccion, resultado ? resultado.lat : null, resultado ? resultado.lng : null, resultado ? resultado.lugar : null]
+        ).catch(() => { /* el caché es una optimización; no debe bloquear */ });
+    };
+
+    const candidatos = [direccion, limpiarConsulta(direccion)].filter(
+        (c, i, arr) => c && arr.indexOf(c) === i
+    );
+    let resultado = null;
+    for (const consulta of candidatos) {
+        try {
+            const url = new URL('https://nominatim.openstreetmap.org/search');
+            url.searchParams.set('format', 'jsonv2');
+            url.searchParams.set('limit', '1');
+            url.searchParams.set('viewbox', GEOCODE_VIEWBOX);
+            url.searchParams.set('bounded', '1');
+            url.searchParams.set('q', consulta);
+            const res = await fetch(url.toString(), {
+                headers: {
+                    'User-Agent': 'SistemaDeConsultasZaculeu/1.0 (sistema-interno)',
+                    'Accept': 'application/json',
+                },
+                signal: AbortSignal.timeout(6000),
+            });
+            const datos = await res.json();
+            const mejor = (Array.isArray(datos) ? datos : []).find(
+                (x) => x && x.lat && x.lon
+            );
+            if (mejor) {
+                resultado = {
+                    lat: Number(mejor.lat),
+                    lng: Number(mejor.lon),
+                    lugar: mejor.display_name,
+                };
+                break;
+            }
+        } catch (error) {
+            break;
+        }
+    }
+    guardarCache(direccion, resultado);
+    return resultado;
+};
+
+const geocodificarFilas = async (filas) => {
+    // Solo se geocodifican las direcciones que NO tienen coordenadas guardadas
+    // en el paciente (definidas con el buscador de dirección del formulario) y
+    // que no se resuelven con el catálogo de zonas del frontend.
+    const conCoords = {};
+    const allaGeocodificar = (f) =>
+        f.lat_guardado == null || f.lng_guardado == null;
+    filas.forEach((f) => {
+        const ok = !allaGeocodificar(f);
+        conCoords[f.direccion] = (conCoords[f.direccion] ?? true) && ok;
+    });
+    const direcciones = Object.keys(conCoords).filter(
+        (d) => d && !conCoords[d] && !geocodePatronZona.test(d)
+    );
+    const resu = {};
+    for (let i = 0; i < direcciones.length; i++) {
+        if (i > 0) await sleep(GEOCODE_DELAY_MS);
+        resu[direcciones[i]] = await geocodificarDireccion(direcciones[i]);
+    }
+    return filas.map((f) => {
+        const geo = resu[f.direccion];
+        // Prioriza la coordenada exacta guardada con el paciente (lat/lng del
+        // buscador de dirección); si no existe, usa la geocodificada.
+        const lat = f.lat_guardado ?? (geo ? geo.lat : null);
+        const lng = f.lng_guardado ?? (geo ? geo.lng : null);
+        const { lat_guardado, lng_guardado, ...resto } = f;
+        return { ...resto, lat, lng, lugar: geo ? geo.lugar : (f.lugar || null) };
+    });
+};
+
+// Buscador de direcciones: devuelve sugerencias de lugares reales del área de
+// Huehuetenango usando Nominatim (autocompletado del formulario de pacientes).
+const sugerirCache = new Map();
+
+const sugerirDireccion = async (direccion) => {
+    const consulta = limpiarConsulta(direccion) || direccion;
+    if (sugerirCache.has(consulta)) return sugerirCache.get(consulta);
+    const resultados = [];
+    try {
+        const url = new URL('https://nominatim.openstreetmap.org/search');
+        url.searchParams.set('format', 'jsonv2');
+        url.searchParams.set('limit', '5');
+        url.searchParams.set('viewbox', GEOCODE_VIEWBOX);
+        url.searchParams.set('bounded', '1');
+        url.searchParams.set('q', consulta);
+        const res = await fetch(url.toString(), {
+            headers: {
+                'User-Agent': 'SistemaDeConsultasZaculeu/1.0 (sistema-interno)',
+                'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(6000),
+        });
+        const datos = await res.json();
+        (Array.isArray(datos) ? datos : []).forEach((x) => {
+            if (x && x.lat && x.lon) {
+                resultados.push({
+                    lat: Number(x.lat),
+                    lng: Number(x.lon),
+                    nombre: x.display_name,
+                });
+            }
+        });
+    } catch (error) {
+        // sin sugerencias
+    }
+    sugerirCache.set(consulta, resultados);
+    return resultados;
+};
+
+app.get('/api/geocodificar', async (req, res) => {
+    const direccion = (req.query.direccion || req.query.q || '').trim();
+    if (!direccion) return res.json([]);
+    try {
+        res.json(await sugerirDireccion(direccion));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error al buscar direcciones' });
+    }
+});
+
 // Mapa de brotes por zona: pacientes con diagnóstico en el período.
 // Devuelve la dirección completa; la ubicación (zona o aldea) se resuelve en
-// el frontend para soportar "Zona Nueve", aldeas, etc.
+// el frontend para soportar "Zona Nueve", aldeas, etc. Para direcciones
+// libres devuelve también las coordenadas obtenidas por geocodificación.
 app.get('/api/estadisticas/mapa', async (req, res) => {
     const { desde, hasta } = parseRango(req);
     try {
-        const { rows } = await pool.query(
-            `SELECT
+        const sql = `SELECT
                p.nombre_completo,
                p.direccion,
+               p.lat AS lat_guardado,
+               p.lng AS lng_guardado,
                TRIM(cm.diagnostico) AS diagnostico,
                TO_CHAR(v.fecha_visita::DATE, 'YYYY-MM-DD') AS fecha
              FROM consulta_medica cm
@@ -1220,10 +1438,10 @@ app.get('/api/estadisticas/mapa', async (req, res) => {
              INNER JOIN paciente p ON v.id_paciente = p.id_paciente
              WHERE v.fecha_visita::DATE BETWEEN $1 AND $2
                AND NULLIF(TRIM(cm.diagnostico), '') IS NOT NULL
-             ORDER BY v.fecha_visita DESC`,
-            [desde, hasta]
-        );
-        res.json(rows);
+             ORDER BY v.fecha_visita DESC`;
+        const { rows } = await pool.query(sql, [desde, hasta]);
+        const conGeocodificacion = await geocodificarFilas(rows);
+        res.json(conGeocodificacion);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error obteniendo datos del mapa de brotes' });

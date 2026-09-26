@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, MapPin } from "lucide-react";
 import { api } from "../services/api";
 import Layout from "../components/Layout";
+import BuscadorDireccion from "../components/BuscadorDireccion";
 
 const initialForm = {
   nombre_completo: "", dpi: "", fecha_nacimiento: "",
-  sexo: "M", telefono: "", direccion: "",
+  sexo: "M", telefono: "", direccion: "", lat: null, lng: null,
 };
 
 export default function RegistroPacientes() {
@@ -64,8 +65,8 @@ export default function RegistroPacientes() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1.5">DPI (13 dígitos)</label>
-            <input name="dpi" value={form.dpi} onChange={handleChange} maxLength={13}
+            <label className="block text-sm font-semibold mb-1.5">DPI (13 dígitos) <span className="text-[#ba1a1a]">*</span></label>
+            <input name="dpi" required value={form.dpi} onChange={handleChange} maxLength={13}
               className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all"
               placeholder="Ej. 1234567890101" />
           </div>
@@ -94,9 +95,17 @@ export default function RegistroPacientes() {
 
           <div className="col-span-1 md:col-span-2">
             <label className="block text-sm font-semibold mb-1.5">Dirección</label>
-            <input name="direccion" value={form.direccion} onChange={handleChange}
-              className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20 transition-all"
-              placeholder="Ej. Zaculeu, Huehuetenango, Guatemala" />
+            <BuscadorDireccion
+              value={form.direccion}
+              placeholder="Escribe la dirección como quieras y elige el lugar exacto, ej. atras del aeropuerto de huehuetenango"
+              onSelect={(v) =>
+                setForm((f) => ({ ...f, direccion: v.direccion, lat: v.lat, lng: v.lng }))
+              }
+            />
+            <p className="text-xs text-[#8a8f9a] mt-1.5 flex items-center gap-1">
+              <MapPin size={12} className="text-[#006a71]" />
+              Sugiere lugares reales de Huehuetenango. Si eliges una opción, se guarda la ubicación exacta (lat/lng).
+            </p>
           </div>
         </div>
 

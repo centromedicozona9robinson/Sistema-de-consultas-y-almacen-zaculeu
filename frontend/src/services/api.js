@@ -291,4 +291,11 @@ export const api = {
     if (!res.ok) throw new Error('Error obteniendo datos del mapa de brotes');
     return res.json();
   },
+
+  sugerirDireccion: async (direccion) => {
+    const q = new URLSearchParams({ direccion }).toString();
+    const res = await fetch(`${API_URL}/geocodificar?${q}`);
+    if (!res.ok) throw new Error('Error buscando direcciones');
+    return res.json();
+  },
 };
