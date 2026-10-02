@@ -24,23 +24,36 @@ app.use(express.json());
 
 const pool = require('./config/db');
 
-// Caché persistente de geocodificación: evita repetir llamadas a Nominatim
-// en cada carga de estadísticas y sobrevive a reinicios del servidor.
-(async () => {
-    try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS geocodigo_cache (
-                direccion TEXT PRIMARY KEY,
-                lat DOUBLE PRECISION,
-                lng DOUBLE PRECISION,
-                lugar TEXT,
-                fecha TIMESTAMP DEFAULT NOW()
-            )
-        `);
-    } catch (error) {
-        console.error('No se pudo crear la tabla de caché de geocodificación:', error.message);
+// Migraciones idempotentes al arranque.
+// schema.sql usa CREATE TABLE IF NOT EXISTS, así que si una tabla ya existía
+// desde una versión anterior del schema, las columnas nuevas nunca se agregan.
+// Estos ALTER TABLE ... IF NOT EXISTS sincronizan la base existente con el
+// schema actual sin borrar datos. Al agregar columnas nuevas en el codigo,
+// repetirlas aqui y en schema.sql.
+async function aplicarMigraciones() {
+    const migraciones = [
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS direccion VARCHAR(250)`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS telefono VARCHAR(15)`,
+        // Caché persistente de geocodificación: evita repetir llamadas a
+        // Nominatim en cada carga de estadísticas y sobrevive a reinicios.
+        `CREATE TABLE IF NOT EXISTS geocodigo_cache (
+            direccion TEXT PRIMARY KEY,
+            lat DOUBLE PRECISION,
+            lng DOUBLE PRECISION,
+            lugar TEXT,
+            fecha TIMESTAMP DEFAULT NOW()
+        )`,
+    ];
+    for (const sql of migraciones) {
+        try {
+            await pool.query(sql);
+        } catch (error) {
+            console.error('Migración fallida:', error.message, '\nSQL:', sql);
+        }
     }
-})();
+}
 
 // ============================================================
 // AUTH
@@ -1499,6 +1512,10 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-    console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
+// Las migraciones corren antes de aceptar peticiones: si la base no está
+// sincronizada, el health check y los endpoints fallarían de forma confusa.
+aplicarMigraciones().finally(() => {
+    app.listen(PORT, () => {
+        console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
+    });
 });
