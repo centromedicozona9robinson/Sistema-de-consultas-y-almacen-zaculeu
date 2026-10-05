@@ -184,6 +184,86 @@ CREATE TABLE IF NOT EXISTS aviso_sistema (
 );
 
 -- ============================================================
+
+
+-- ============================================================
+--  CATÁLOGO: ENFERMEDADES CRÓNICAS (con rangos edad y sexo)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS enfermedad_cronica (
+  id_enfermedad_cronica SERIAL PRIMARY KEY,
+  grupo VARCHAR(80) NOT NULL,
+  nombre VARCHAR(200) NOT NULL,
+  edad_min SMALLINT,
+  edad_max SMALLINT,
+  sexo_aplica CHAR(1) NOT NULL CHECK (sexo_aplica IN ('M','F','A')),
+  requiere_localizacion BOOLEAN DEFAULT FALSE,
+  activa BOOLEAN DEFAULT TRUE,
+  orden SMALLINT DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_ec_grupo ON enfermedad_cronica(grupo);
+CREATE INDEX IF NOT EXISTS idx_ec_activa ON enfermedad_cronica(activa);
+
+-- ============================================================
+--  PACIENTE - ENFERMEDADES CRÓNICAS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS paciente_enfermedad_cronica (
+  id_paciente_enfermedad_cronica SERIAL PRIMARY KEY,
+  id_paciente INT NOT NULL REFERENCES paciente(id_paciente) ON DELETE CASCADE,
+  id_enfermedad_cronica INT NOT NULL REFERENCES enfermedad_cronica(id_enfermedad_cronica),
+  localizacion VARCHAR(80),
+  fecha_diagnostico DATE,
+  activa BOOLEAN DEFAULT TRUE,
+  observacion TEXT,
+  fecha_registro TIMESTAMP DEFAULT NOW(),
+  id_usuario_registro INT REFERENCES usuario(id_usuario)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pxc_paciente ON paciente_enfermedad_cronica(id_paciente);
+CREATE INDEX IF NOT EXISTS idx_pxc_ec ON paciente_enfermedad_cronica(id_enfermedad_cronica);
+
+-- ============================================================
+--  FACTORES DE RIESGO Y TAMIZAJES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS factor_riesgo (
+  id_factor_riesgo SERIAL PRIMARY KEY,
+  id_visita INT NOT NULL REFERENCES visita(id_visita) ON DELETE CASCADE,
+  sobrepeso BOOLEAN DEFAULT FALSE,
+  sobrepeso_imc NUMERIC(4,2),
+  obesidad BOOLEAN DEFAULT FALSE,
+  obesidad_imc NUMERIC(4,2),
+  circ_abdominal BOOLEAN DEFAULT FALSE,
+  circ_abdominal_cm NUMERIC(5,2),
+  circ_abdominal_fecha DATE,
+  riesgo_ecv_elevado BOOLEAN DEFAULT FALSE,
+  riesgo_ecv_observacion TEXT,
+  fecha_registro TIMESTAMP DEFAULT NOW(),
+  id_usuario_registro INT REFERENCES usuario(id_usuario)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fr_visita ON factor_riesgo(id_visita);
+
+-- ============================================================
+--  AUDITORÍA DE CORRECCIONES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS auditoria_correccion (
+  id_auditoria_correccion SERIAL PRIMARY KEY,
+  id_visita INT REFERENCES visita(id_visita),
+  id_consulta_original INT REFERENCES consulta_medica(id_consulta),
+  id_consulta_corregida INT REFERENCES consulta_medica(id_consulta),
+  tabla VARCHAR(50),
+  campo VARCHAR(100),
+  valor_anterior TEXT,
+  valor_nuevo TEXT,
+  motivo TEXT,
+  id_usuario INT REFERENCES usuario(id_usuario),
+  ip_equipo VARCHAR(45),
+  fecha_hora TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ac_visita ON auditoria_correccion(id_visita);
+CREATE INDEX IF NOT EXISTS idx_ac_fecha ON auditoria_correccion(fecha_hora);
+
 --  VISTAS
 -- ============================================================
 CREATE OR REPLACE VIEW v_visitas_hoy AS
@@ -332,3 +412,40 @@ INSERT INTO categoria_medicamento (nombre_categoria, descripcion) VALUES
   ('Antipiréticos',       'Control de fiebre'),
   ('Antigripales',        'Tratamiento de resfriados y gripe')
 ON CONFLICT (nombre_categoria) DO NOTHING;
+
+-- ============================================================
+--  SEED: CATÁLOGO ENFERMEDADES CRÓNICAS
+-- ============================================================
+INSERT INTO enfermedad_cronica (grupo, nombre, edad_min, edad_max, sexo_aplica, requiere_localizacion, orden) VALUES
+-- Diabetes Mellitus
+('Diabetes Mellitus', 'Diabetes Mellitus Pct. 0 a 19 años', 0, 19, 'A', false, 1),
+('Diabetes Mellitus', 'Diabetes Mellitus Pct. 20 a 39 años', 20, 39, 'A', false, 2),
+('Diabetes Mellitus', 'Diabetes Mellitus Pct. 40 a 59 años', 40, 59, 'A', false, 3),
+('Diabetes Mellitus', 'Diabetes Mellitus Pct. 60 y + años', 60, 999, 'A', false, 4),
+-- Hipertensión Arterial
+('Hipertensión Arterial', 'Hipertensión Arterial Pct. 0 a 19 años', 0, 19, 'A', false, 5),
+('Hipertensión Arterial', 'Hipertensión Arterial Pct. 20 a 39 años', 20, 39, 'A', false, 6),
+('Hipertensión Arterial', 'Hipertensión Arterial Pct. 40 a 59 años', 40, 59, 'A', false, 7),
+('Hipertensión Arterial', 'Hipertensión Arterial Pct. 60 y + años', 60, 999, 'A', false, 8),
+-- Insuficiencia Renal Crónica
+('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 0 a 19 años', 0, 19, 'A', false, 9),
+('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 20 a 39 años', 20, 39, 'A', false, 10),
+('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 40 a 59 años', 40, 59, 'A', false, 11),
+('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 60 y + años', 60, 999, 'A', false, 12),
+-- Enfermedades Cardiovasculares
+('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 0 a 19 años', 0, 19, 'A', false, 13),
+('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 20 a 39 años', 20, 39, 'A', false, 14),
+('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 40 a 59 años', 40, 59, 'A', false, 15),
+('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 60 y + años', 60, 999, 'A', false, 16),
+-- Cáncer por edad
+('Cáncer', 'Cáncer Pct. De 0 a 19 años', 0, 19, 'A', true, 17),
+('Cáncer', 'Cáncer Pct. De 20 a 39 años', 20, 39, 'A', true, 18),
+('Cáncer', 'Cáncer Pct. De 40 a 59 años', 40, 59, 'A', true, 19),
+('Cáncer', 'Cáncer Pct. De 60 y más años', 60, 999, 'A', true, 20),
+-- Localización de Cáncer
+('Cáncer - Localización', 'Cáncer Gástrico', 0, 999, 'A', false, 21),
+('Cáncer - Localización', 'Cáncer Pulmonar', 0, 999, 'A', false, 22),
+('Cáncer - Localización', 'Cáncer de Próstata', 0, 999, 'M', false, 23),
+('Cáncer - Localización', 'Cáncer de Mama', 0, 999, 'F', false, 24),
+('Cáncer - Localización', 'Cáncer de Cérvix', 0, 999, 'F', false, 25)
+ON CONFLICT DO NOTHING;

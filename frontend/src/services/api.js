@@ -298,4 +298,71 @@ export const api = {
     if (!res.ok) throw new Error('Error buscando direcciones');
     return res.json();
   },
+
+  // ENFERMEDADES CRÓNICAS
+  getCatalogoEnfermedades: async (edad, sexo) => {
+    const qs = new URLSearchParams();
+    if (edad !== undefined && edad !== null && edad !== '') qs.append('edad', edad);
+    if (sexo) qs.append('sexo', sexo);
+    const res = await fetch(`${API_URL}/enfermedades-cronicas?${qs}`);
+    if (!res.ok) throw new Error('Error obteniendo catálogo');
+    return res.json();
+  },
+  getEnfermedadesCronicasPaciente: async (id_paciente) => {
+    const res = await fetch(`${API_URL}/pacientes/${id_paciente}/enfermedades-cronicas`);
+    if (!res.ok) throw new Error('Error obteniendo crónicos');
+    return res.json();
+  },
+  agregarEnfermedadCronicaPaciente: async (id_paciente, data) => {
+    const res = await fetch(`${API_URL}/pacientes/${id_paciente}/enfermedades-cronicas`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+  eliminarEnfermedadCronicaPaciente: async (id) => {
+    const res = await fetch(`${API_URL}/pacientes/enfermedades-cronicas/${id}`, {method:'DELETE'});
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+
+  // FACTORES DE RIESGO
+  getFactoresRiesgo: async (id_visita) => {
+    const res = await fetch(`${API_URL}/factores-riesgo/${id_visita}`);
+    if (!res.ok) throw new Error('Error');
+    return res.json();
+  },
+  guardarFactoresRiesgo: async (data) => {
+    const res = await fetch(`${API_URL}/factores-riesgo`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+
+  // PACIENTE
+  actualizarPaciente: async (id_paciente, data) => {
+    const res = await fetch(`${API_URL}/pacientes/${id_paciente}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+
+  // CORRECCIONES
+  corregirConsulta: async (id_consulta, data) => {
+    const res = await fetch(`${API_URL}/consulta_medica/${id_consulta}/corregir`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+  entregarConsulta: async (id_consulta) => {
+    const res = await fetch(`${API_URL}/consulta_medica/${id_consulta}/entregar`, {method:'POST'});
+    const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
+  },
+
+  // ESTADÍSTICAS EMBARAZADAS IMC
+  getEstadisticasEmbarazadasIMC: async (desde, hasta) => {
+    const qs = new URLSearchParams({desde,hasta});
+    const res = await fetch(`${API_URL}/estadisticas/embarazadas/imc?${qs}`);
+    if (!res.ok) throw new Error('Error');
+    return res.json();
+  },
+
 };

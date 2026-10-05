@@ -45,6 +45,38 @@ async function aplicarMigraciones() {
             lugar TEXT,
             fecha TIMESTAMP DEFAULT NOW()
         )`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS sintomas TEXT`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS hallazgos TEXT`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS recetado TEXT`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS tipo_visita TEXT CHECK (tipo_visita IN ('CONSULTA','RECONSULTA','AMBAS'))`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS es_consulta BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS es_reconsulta BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS motivo_mapeado TEXT`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS corregido_por INT REFERENCES usuario(id_usuario)`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS fecha_corregido TIMESTAMP`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS motivo_correcion TEXT`,
+
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS esta_embarazada BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS embarazo_finalizado BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS fecha_embarazo_finalizado TIMESTAMP`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS usuario_embarazo_finalizado INT REFERENCES usuario(id_usuario)`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS motivo_embarazo_finalizado TEXT`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS imc_pregestacional NUMERIC(4,2)`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS peso_habitual_kg NUMERIC(6,2)`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS fur DATE`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS fpp DATE`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS semana_gestacion SMALLINT`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS fecha_registro_embarazo TIMESTAMP`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS usuario_registro_embarazo INT REFERENCES usuario(id_usuario)`,
+
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS version INT DEFAULT 1`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS tipo_version VARCHAR(20) DEFAULT 'original' CHECK (tipo_version IN ('original','corregido'))`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS padre_version INT REFERENCES consulta_medica(id_consulta)`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS corregido_por INT REFERENCES usuario(id_usuario)`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS fecha_corregido TIMESTAMP`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS motivo_correcion TEXT`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS entregado BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS fecha_entrega TIMESTAMP`,
     ];
     for (const sql of migraciones) {
         try {
@@ -53,6 +85,44 @@ async function aplicarMigraciones() {
             console.error('Migración fallida:', error.message, '\nSQL:', sql);
         }
     }
+}
+
+
+async function seedCatalogoEnfermedades() {
+    try {
+        const { rows } = await pool.query('SELECT COUNT(*)::INT AS c FROM enfermedad_cronica');
+        if (rows[0].c > 0) return;
+        const items = [
+            ['Diabetes Mellitus','Diabetes Mellitus Pct. 0 a 19 años',0,19,'A',false,1],
+            ['Diabetes Mellitus','Diabetes Mellitus Pct. 20 a 39 años',20,39,'A',false,2],
+            ['Diabetes Mellitus','Diabetes Mellitus Pct. 40 a 59 años',40,59,'A',false,3],
+            ['Diabetes Mellitus','Diabetes Mellitus Pct. 60 y + años',60,999,'A',false,4],
+            ['Hipertensión Arterial','Hipertensión Arterial Pct. 0 a 19 años',0,19,'A',false,5],
+            ['Hipertensión Arterial','Hipertensión Arterial Pct. 20 a 39 años',20,39,'A',false,6],
+            ['Hipertensión Arterial','Hipertensión Arterial Pct. 40 a 59 años',40,59,'A',false,7],
+            ['Hipertensión Arterial','Hipertensión Arterial Pct. 60 y + años',60,999,'A',false,8],
+            ['Insuficiencia Renal Crónica','Insuficiencia Renal Crónica 0 a 19 años',0,19,'A',false,9],
+            ['Insuficiencia Renal Crónica','Insuficiencia Renal Crónica 20 a 39 años',20,39,'A',false,10],
+            ['Insuficiencia Renal Crónica','Insuficiencia Renal Crónica 40 a 59 años',40,59,'A',false,11],
+            ['Insuficiencia Renal Crónica','Insuficiencia Renal Crónica 60 y + años',60,999,'A',false,12],
+            ['Enfermedades Cardiovasculares','Enfermedades Cardiovasculares 0 a 19 años',0,19,'A',false,13],
+            ['Enfermedades Cardiovasculares','Enfermedades Cardiovasculares 20 a 39 años',20,39,'A',false,14],
+            ['Enfermedades Cardiovasculares','Enfermedades Cardiovasculares 40 a 59 años',40,59,'A',false,15],
+            ['Enfermedades Cardiovasculares','Enfermedades Cardiovasculares 60 y + años',60,999,'A',false,16],
+            ['Cáncer','Cáncer Pct. De 0 a 19 años',0,19,'A',true,17],
+            ['Cáncer','Cáncer Pct. De 20 a 39 años',20,39,'A',true,18],
+            ['Cáncer','Cáncer Pct. De 40 a 59 años',40,59,'A',true,19],
+            ['Cáncer','Cáncer Pct. De 60 y más años',60,999,'A',true,20],
+            ['Cáncer - Localización','Cáncer Gástrico',0,999,'A',false,21],
+            ['Cáncer - Localización','Cáncer Pulmonar',0,999,'A',false,22],
+            ['Cáncer - Localización','Cáncer de Próstata',0,999,'M',false,23],
+            ['Cáncer - Localización','Cáncer de Mama',0,999,'F',false,24],
+            ['Cáncer - Localización','Cáncer de Cérvix',0,999,'F',false,25],
+        ];
+        for (const it of items) {
+            await pool.query('INSERT INTO enfermedad_cronica (grupo,nombre,edad_min,edad_max,sexo_aplica,requiere_localizacion,orden) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING', it);
+        }
+    } catch (e) { console.error('seed catalogo', e.message); }
 }
 
 // ============================================================
@@ -543,6 +613,14 @@ app.post('/api/preconsulta', async (req, res) => {
     if (presion_sistolica && (presion_sistolica > 140 || presion_sistolica < 90)) detalle_alerta.push(`Presión sistólica: ${presion_sistolica}`);
     if (presion_diastolica && (presion_diastolica > 90 || presion_diastolica < 60)) detalle_alerta.push(`Presión diastólica: ${presion_diastolica}`);
 
+
+    const esCons = (es_consulta === true || es_consulta === 'true') || (tipo_visita && tipo_visita.includes('CONSULTA'));
+    const esRe = (es_reconsulta === true || es_reconsulta === 'true') || (tipo_visita && tipo_visita.includes('RECONSULTA'));
+    let tipoVisitaFinal = tipo_visita || null;
+    if (!tipoVisitaFinal && esCons && esRe) tipoVisitaFinal = 'AMBAS';
+    if (!tipoVisitaFinal && esCons && !esRe) tipoVisitaFinal = 'CONSULTA';
+    if (!tipoVisitaFinal && esRe && !esCons) tipoVisitaFinal = 'RECONSULTA';
+
     try {
         await pool.query('BEGIN');
 
@@ -551,14 +629,14 @@ app.post('/api/preconsulta', async (req, res) => {
                 id_visita, presion_sistolica, presion_diastolica,
                 frecuencia_cardiaca, temperatura, frecuencia_respiratoria, saturacion_oxigeno,
                 peso, talla, imc, alerta_signos, detalle_alerta, id_usuario_registro
-             ) VALUES ($1,$2,$3,NULL,NULL,NULL,NULL,$4,$5,$6,$7,$8,$9)
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$4,$5,$6,$7,$8,$9)
              ON CONFLICT (id_visita) DO UPDATE SET
                 presion_sistolica = EXCLUDED.presion_sistolica,
                 presion_diastolica = EXCLUDED.presion_diastolica,
-                frecuencia_cardiaca = NULL,
-                temperatura = NULL,
-                frecuencia_respiratoria = NULL,
-                saturacion_oxigeno = NULL,
+                frecuencia_cardiaca = EXCLUDED.frecuencia_cardiaca,
+                temperatura = EXCLUDED.temperatura,
+                frecuencia_respiratoria = EXCLUDED.frecuencia_respiratoria,
+                saturacion_oxigeno = EXCLUDED.saturacion_oxigeno,
                 peso = EXCLUDED.peso,
                 talla = EXCLUDED.talla,
                 imc = EXCLUDED.imc,
@@ -576,6 +654,13 @@ app.post('/api/preconsulta', async (req, res) => {
                 imc,
                 alerta_signos,
                 detalle_alerta.join('; ') || null,
+                sintomas || null,
+                hallazgos || null,
+                recetado || null,
+                tipoVisitaFinal,
+                esCons || false,
+                esRe || false,
+                motivo_mapeado || null,
                 id_usuario_registro
             ]
         );
@@ -720,6 +805,224 @@ app.post('/api/consulta_medica', async (req, res) => {
         client.release();
     }
 });
+
+// ============================================================
+// ENFERMEDADES CRÓNICAS - CATÁLOGO
+// ============================================================
+app.get('/api/enfermedades-cronicas', async (req, res) => {
+    try {
+        const { edad, sexo } = req.query;
+        let where = 'WHERE activa = TRUE';
+        const params = [];
+        if (edad !== undefined && edad !== null && edad !== '') {
+            params.push(parseInt(edad));
+            where += ` AND edad_min <= $${params.length} AND edad_max >= $${params.length}`;
+        }
+        if (sexo && ['M','F'].includes(sexo)) {
+            params.push(sexo);
+            where += ` AND (sexo_aplica = 'A' OR sexo_aplica = $${params.length})`;
+        }
+        const { rows } = await pool.query(
+            `SELECT * FROM enfermedad_cronica ${where} ORDER BY orden ASC, grupo ASC, nombre ASC`,
+            params
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo catálogo de enfermedades crónicas' });
+    }
+});
+
+app.get('/api/pacientes/:id_paciente/enfermedades-cronicas', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT pxc.*, ec.grupo, ec.nombre, ec.requiere_localizacion
+             FROM paciente_enfermedad_cronica pxc
+             INNER JOIN enfermedad_cronica ec ON pxc.id_enfermedad_cronica = ec.id_enfermedad_cronica
+             WHERE pxc.id_paciente = $1 AND pxc.activa = TRUE
+             ORDER BY pxc.fecha_registro DESC`,
+            [req.params.id_paciente]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo enfermedades crónicas del paciente' });
+    }
+});
+
+app.post('/api/pacientes/:id_paciente/enfermedades-cronicas', async (req, res) => {
+    const { id_enfermedad_cronica, localizacion, fecha_diagnostico, observacion, id_usuario_registro } = req.body;
+    if (!id_enfermedad_cronica || !id_usuario_registro) {
+        return res.status(400).json({ error: 'Datos incompletos' });
+    }
+    try {
+        const { rows } = await pool.query(
+            `INSERT INTO paciente_enfermedad_cronica (id_paciente, id_enfermedad_cronica, localizacion, fecha_diagnostico, observacion, id_usuario_registro)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [req.params.id_paciente, id_enfermedad_cronica, localizacion || null, fecha_diagnostico || null, observacion || null, id_usuario_registro]
+        );
+        res.status(201).json(rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error al asignar enfermedad crónica' });
+    }
+});
+
+app.delete('/api/pacientes/enfermedades-cronicas/:id', async (req, res) => {
+    try {
+        await pool.query('UPDATE paciente_enfermedad_cronica SET activa = FALSE WHERE id_paciente_enfermedad_cronica = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error al eliminar enfermedad crónica' });
+    }
+});
+
+
+
+// ============================================================
+// FACTORES DE RIESGO Y TAMIZAJES
+// ============================================================
+app.get('/api/factores-riesgo/:id_visita', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT * FROM factor_riesgo WHERE id_visita = $1', [req.params.id_visita]);
+        if (rows.length === 0) return res.status(404).json({ error: 'No encontrado' });
+        res.json(rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo factores de riesgo' });
+    }
+});
+
+app.post('/api/factores-riesgo', async (req, res) => {
+    const {
+        id_visita, sobrepeso, sobrepeso_imc, obesidad, obesidad_imc,
+        circ_abdominal, circ_abdominal_cm, circ_abdominal_fecha,
+        riesgo_ecv_elevado, riesgo_ecv_observacion, id_usuario_registro
+    } = req.body;
+    if (!id_visita || !id_usuario_registro) return res.status(400).json({ error: 'Datos incompletos' });
+    try {
+        const { rows } = await pool.query(
+            `INSERT INTO factor_riesgo (
+                id_visita, sobrepeso, sobrepeso_imc, obesidad, obesidad_imc,
+                circ_abdominal, circ_abdominal_cm, circ_abdominal_fecha,
+                riesgo_ecv_elevado, riesgo_ecv_observacion, id_usuario_registro
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT DO NOTHING RETURNING *`,
+            [
+                id_visita, sobrepeso||false, sobrepeso_imc||null, obesidad||false, obesidad_imc||null,
+                circ_abdominal||false, circ_abdominal_cm||null, circ_abdominal_fecha||null,
+                riesgo_ecv_elevado||false, riesgo_ecv_observacion||null, sintomas || null,
+                hallazgos || null,
+                recetado || null,
+                tipoVisitaFinal,
+                esCons || false,
+                esRe || false,
+                motivo_mapeado || null,
+                id_usuario_registro
+            ]
+        );
+        if (rows.length === 0) {
+            const { rows: ex } = await pool.query('SELECT * FROM factor_riesgo WHERE id_visita = $1', [id_visita]);
+            res.json(ex[0]);
+        } else res.status(201).json(rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error guardando factores de riesgo' });
+    }
+});
+
+
+
+// ============================================================
+// CORRECCIONES DE CONSULTA MÉDICA (VERSIONADO)
+// ============================================================
+app.post('/api/consulta_medica/:id_consulta/corregir', async (req, res) => {
+    const { id_consulta } = req.params;
+    const { diagnostico, indicaciones, observaciones, fecha_seguimiento, id_usuario, motivo, recetas } = req.body;
+    if (!id_usuario || !motivo) return res.status(400).json({ error: 'Usuario y motivo son requeridos' });
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const orig = await client.query('SELECT * FROM consulta_medica WHERE id_consulta = $1', [id_consulta]);
+        if (orig.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Consulta no encontrada' }); }
+        const o = orig.rows[0];
+        const newv = await client.query(
+            `INSERT INTO consulta_medica (id_visita, diagnostico, indicaciones, observaciones, fecha_seguimiento, id_medico, version, tipo_version, padre_version, corregido_por, fecha_corregido, motivo_correcion)
+             VALUES ($1,$2,$3,$4,$5,$6, COALESCE($7,1)+1, 'corregido', $8, $9, NOW(), $10)
+             RETURNING *`,
+            [o.id_visita, diagnostico || o.diagnostico, indicaciones || o.indicaciones, observaciones || o.observaciones, fecha_seguimiento || o.fecha_seguimiento, id_usuario, o.version, o.id_consulta, id_usuario, motivo]
+        );
+        const id_new = newv.rows[0].id_consulta;
+        await client.query(
+            `INSERT INTO auditoria_correccion (id_visita, id_consulta_original, id_consulta_corregida, tabla, campo, motivo, id_usuario)
+             VALUES ($1,$2,$3,'consulta_medica','diagnostico', $4, $5)`,
+            [o.id_visita, o.id_consulta, id_new, motivo, id_usuario]
+        );
+        await client.query('COMMIT');
+        res.status(201).json(newv.rows[0]);
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error(e);
+        res.status(500).json({ error: 'Error al corregir consulta' });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/consulta_medica/:id_consulta/entregar', async (req, res) => {
+    const { id_consulta } = req.params;
+    try {
+        const { rows } = await pool.query('UPDATE consulta_medica SET entregado = TRUE, fecha_entrega = NOW() WHERE id_consulta = $1 RETURNING *', [id_consulta]);
+        res.json(rows[0] || {});
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Error al marcar entrega' });
+    }
+});
+
+
+
+// ============================================================
+// ACTUALIZAR PACIENTE (EMBARAZO, CRÓNICOS, OTROS)
+// ============================================================
+app.put('/api/pacientes/:id_paciente', async (req, res) => {
+    const { id_paciente } = req.params;
+    const {
+        esta_embarazada, embarazo_finalizado, fecha_embarazo_finalizado, usuario_embarazo_finalizado, motivo_embarazo_finalizado,
+        imc_pregestacional, peso_habitual_kg, fur, fpp, semana_gestacion, usuario_registro_embarazo
+    } = req.body;
+    try {
+        const { rows } = await pool.query(
+            `UPDATE paciente SET
+                esta_embarazada = COALESCE($1, esta_embarazada),
+                embarazo_finalizado = COALESCE($2, embarazo_finalizado),
+                fecha_embarazo_finalizado = COALESCE($3, fecha_embarazo_finalizado),
+                usuario_embarazo_finalizado = COALESCE($4, usuario_embarazo_finalizado),
+                motivo_embarazo_finalizado = COALESCE($5, motivo_embarazo_finalizado),
+                imc_pregestacional = COALESCE($6, imc_pregestacional),
+                peso_habitual_kg = COALESCE($7, peso_habitual_kg),
+                fur = COALESCE($8, fur),
+                fpp = COALESCE($9, fpp),
+                semana_gestacion = COALESCE($10, semana_gestacion),
+                usuario_registro_embarazo = COALESCE($11, usuario_registro_embarazo),
+                fecha_registro_embarazo = CASE WHEN $1 IS TRUE AND fecha_registro_embarazo IS NULL THEN NOW() ELSE fecha_registro_embarazo END
+             WHERE id_paciente = $12
+             RETURNING *`,
+            [
+                esta_embarazada, embarazo_finalizado, fecha_embarazo_finalizado || null, usuario_embarazo_finalizado || null, motivo_embarazo_finalizado || null,
+                imc_pregestacional || null, peso_habitual_kg || null, fur || null, fpp || null, semana_gestacion || null, usuario_registro_embarazo || null,
+                id_paciente
+            ]
+        );
+        res.json(rows[0]);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Error actualizando paciente' });
+    }
+});
+
 
 // ============================================================
 // OBTENER PRECONSULTA DE UNA VISITA
@@ -1514,8 +1817,42 @@ app.get('/health', (req, res) => {
 
 // Las migraciones corren antes de aceptar peticiones: si la base no está
 // sincronizada, el health check y los endpoints fallarían de forma confusa.
-aplicarMigraciones().finally(() => {
+aplicarMigraciones().then(seedCatalogoEnfermedades).finally(() => {
     app.listen(PORT, () => {
         console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
     });
+});
+
+// IMC de embarazadas (clasificación por IMC pregestacional OMS)
+app.get('/api/estadisticas/embarazadas/imc', async (req, res) => {
+    const { desde, hasta } = parseRango(req);
+    try {
+        const { rows } = await pool.query(
+            `SELECT
+               COUNT(*) FILTER (WHERE imc_pregestacional < 18.5)::INT AS bajo_peso,
+               COUNT(*) FILTER (WHERE imc_pregestacional >= 18.5 AND imc_pregestacional < 25)::INT AS normal,
+               COUNT(*) FILTER (WHERE imc_pregestacional >= 25 AND imc_pregestacional < 30)::INT AS sobrepeso,
+               COUNT(*) FILTER (WHERE imc_pregestacional >= 30 AND imc_pregestacional < 35)::INT AS obesidad1,
+               COUNT(*) FILTER (WHERE imc_pregestacional >= 35 AND imc_pregestacional < 40)::INT AS obesidad2,
+               COUNT(*) FILTER (WHERE imc_pregestacional >= 40)::INT AS obesidad3,
+               COUNT(*) FILTER (WHERE imc_pregestacional IS NOT NULL)::INT AS total_con_imc,
+               COUNT(*)::INT AS total_embarazadas
+             FROM paciente
+             WHERE esta_embarazada = TRUE AND activo = TRUE
+               AND (fecha_registro_embarazo::DATE BETWEEN $1 AND $2 OR fur BETWEEN $1 AND $2 OR fpp BETWEEN $1 AND $2)`,
+            [desde, hasta]
+        );
+        const { rows: detalle } = await pool.query(
+            `SELECT id_paciente, nombre_completo, fecha_nacimiento, sexo, imc_pregestacional, peso_habitual_kg, fur, fpp, semana_gestacion, fecha_registro_embarazo
+             FROM paciente
+             WHERE esta_embarazada = TRUE AND activo = TRUE AND imc_pregestacional IS NOT NULL
+               AND (fecha_registro_embarazo::DATE BETWEEN $1 AND $2 OR fur BETWEEN $1 AND $2 OR fpp BETWEEN $1 AND $2)
+             ORDER BY fecha_registro_embarazo DESC NULLS LAST`,
+            [desde, hasta]
+        );
+        res.json({ resumen: rows[0], detalle });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Error obteniendo estadísticas IMC embarazadas' });
+    }
 });
