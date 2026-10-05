@@ -200,9 +200,27 @@ function clasificarEdad(fechaNac, fechaRef) {
         visitaId = visita.id_visita;
       }
       const tipoV = tipoVisita.consulta && tipoVisita.reconsulta ? 'AMBAS' : (tipoVisita.consulta ? 'CONSULTA' : (tipoVisita.reconsulta ? 'RECONSULTA' : null));
-      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, sintomas: form.sintomas||null, hallazgos: form.hallazgos||null, recetado: form.recetado||null };
+      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, sintomas: form.sintomas||null, recetado: form.recetado||null };
       delete data.imc;
       await api.registrarPreconsulta(data);
+      try {
+        const p = parseFloat(form.peso);
+        const t = parseFloat(form.talla);
+        const imcCalc = p && t && t > 0 ? ((p * 0.453592) / (t * t)) : null;
+        await api.guardarFactoresRiesgo({
+          id_visita: visitaId,
+          id_usuario_registro: user.id,
+          sobrepeso: imcCalc >= 25 && imcCalc < 30,
+          sobrepeso_imc: (imcCalc >= 25 && imcCalc < 30) ? imcCalc.toFixed(2) : null,
+          obesidad: imcCalc >= 30,
+          obesidad_imc: imcCalc >= 30 ? imcCalc.toFixed(2) : null,
+          circ_abdominal: factores.circ_abdominal,
+          circ_abdominal_cm: factores.circ_abdominal_cm || null,
+          circ_abdominal_fecha: factores.circ_abdominal_fecha || null,
+          riesgo_ecv_elevado: factores.riesgo_ecv_elevado,
+          riesgo_ecv_observacion: factores.riesgo_ecv_observacion || null,
+        });
+      } catch (e) { console.error(e); }
       setFeedback({ type: "ok", msg: "Preconsulta guardada. Estado: EN TRIAJE" });
       setPreconsultaExistente(data);
       setTimeout(() => navigate(-1), 900);
@@ -415,12 +433,9 @@ function clasificarEdad(fechaNac, fechaRef) {
               <label className="block text-sm font-semibold mb-1.5">Síntomas (refiere paciente)</label>
               <textarea name="sintomas" value={form.sintomas||''} onChange={handleChange} rows={2} className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" placeholder="Síntomas que refiere el paciente..." />
             </div>
+
             <div>
-              <label className="block text-sm font-semibold mb-1.5">Hallazgos (lo realmente encontrado)</label>
-              <textarea name="hallazgos" value={form.hallazgos||''} onChange={handleChange} rows={2} className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" placeholder="Hallazgos del examen..." />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1.5">Recetado / Manejo</label>
+              <label className="block text-sm font-semibold mb-1.5">Recetado y Manejo</label>
               <textarea name="recetado" value={form.recetado||''} onChange={handleChange} rows={2} className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" placeholder="Lo que se le recetó/manejo..." />
             </div>
 
@@ -442,9 +457,7 @@ function clasificarEdad(fechaNac, fechaRef) {
               {factores.riesgo_ecv_elevado && (
                 <input type="text" placeholder="Observación" value={factores.riesgo_ecv_observacion} onChange={(e)=>setFactores(f=>({...f,riesgo_ecv_observacion:e.target.value}))} className="border border-[#c2c6d4] rounded px-2 py-1 w-full" />
               )}
-              <button type="button" onClick={async()=>{
-                try{await api.guardarFactoresRiesgo({...factores, id_visita: parseInt(id_visita), id_usuario_registro: user.id}); alert('Guardado');}catch(e){alert(e.message)}
-              }} className="text-xs bg-[#005eb8] text-white px-2 py-1 rounded">Guardar factores de riesgo</button>
+
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-[#eceef0]">
@@ -486,3 +499,15 @@ function VitalInput({ name, range, value, isOut, onChange }) {
     </div>
   );
 }
+  useEffect(() => {
+    const p = parseFloat(form.peso);
+    const t = parseFloat(form.talla);
+    const imcCalc = p && t && t > 0 ? ((p * 0.453592) / (t * t)) : null;
+    setFactores(f => ({
+      ...f,
+      sobrepeso: imcCalc >= 25 && imcCalc < 30,
+      obesidad: imcCalc >= 30,
+      sobrepeso_imc: imcCalc >= 25 && imcCalc < 30 ? imcCalc.toFixed(2) : null,
+      obesidad_imc: imcCalc >= 30 ? imcCalc.toFixed(2) : null,
+    }));
+  }, [form.peso, form.talla]);
