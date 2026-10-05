@@ -127,7 +127,8 @@ const fetchData = async () => {
   const computeImc = (f) => {
     const p = parseFloat(f.peso);
     const t = parseFloat(f.talla);
-    return p && t && t > 0 ? ((p * 0.453592) / (t * t)).toFixed(2) : null;
+    if (!p || !t || t <= 0) return null;
+    return (p / (t * t)).toFixed(2);
   };
 
 
@@ -206,7 +207,7 @@ function clasificarEdad(fechaNac, fechaRef) {
       try {
         const p = parseFloat(form.peso);
         const t = parseFloat(form.talla);
-        const imcCalc = p && t && t > 0 ? ((p * 0.453592) / (t * t)) : null;
+        const imcCalc = p && t && t > 0 ? (p / (t * t)) : null;
         await api.guardarFactoresRiesgo({
           id_visita: visitaId,
           id_usuario_registro: user.id,
@@ -502,7 +503,7 @@ function VitalInput({ name, range, value, isOut, onChange }) {
   useEffect(() => {
     const p = parseFloat(form.peso);
     const t = parseFloat(form.talla);
-    const imcCalc = p && t && t > 0 ? ((p * 0.453592) / (t * t)) : null;
+    const imcCalc = p && t && t > 0 ? (p / (t * t)) : null;
     setFactores(f => ({
       ...f,
       sobrepeso: imcCalc >= 25 && imcCalc < 30,
