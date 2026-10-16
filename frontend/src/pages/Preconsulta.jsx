@@ -146,6 +146,7 @@ const fetchData = async () => {
       if (id_paciente) {
         const exp = await api.getExpediente(id_paciente);
         setPaciente(exp.paciente);
+        cargarDatosCronicos(exp.paciente);
         setForm(f => ({ ...f, alergias: f.alergias || exp.paciente.alergias || '' }));
         if (exp.paciente.esta_embarazada) setEstaEmbarazada(true);
         if (exp.paciente.imc_pregestacional) setImcPreg(exp.paciente.imc_pregestacional);
