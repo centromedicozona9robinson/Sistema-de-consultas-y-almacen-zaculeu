@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Loader2, CheckCircle2, AlertCircle, FileText, Pill, HeartPulse, ArrowLeft, X, Plus, Search } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, FileText, Pill, HeartPulse, ArrowLeft, X, Plus, Search, Download, PenLine, PackageCheck } from "lucide-react";
+import { jsPDF } from "jspdf";
 import { api } from "../services/api";
 import Layout from "../components/Layout";
 
@@ -23,6 +24,11 @@ export default function ConsultaMedica() {
   const [recetas, setRecetas] = useState([]);
   const [cantidadModal, setCantidadModal] = useState(null);
   const [cantidad, setCantidad] = useState("");
+  const [motivoCorreccion, setMotivoCorreccion] = useState("");
+  const [modoCorreccion, setModoCorreccion] = useState(false);
+  const [entregado, setEntregado] = useState(false);
+  const [versionActual, setVersionActual] = useState(1);
+  const [idConsulta, setIdConsulta] = useState(null);
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
 
@@ -50,6 +56,9 @@ const fetchData = async () => {
       setPreconsulta(pre);
       if (con) {
         setConsultaExistente(con);
+        setIdConsulta(con.id_consulta);
+        setVersionActual(con.version || 1);
+        setEntregado(!!con.entregado);
         setForm({
           diagnostico: con.diagnostico || "",
           indicaciones: con.indicaciones || "",
@@ -116,8 +125,82 @@ const fetchData = async () => {
     setRecetas(r => r.filter((_, i) => i !== index));
   };
 
+  const handleCorregir = async () => {
+    if (!idConsulta) return;
+    if (!motivoCorreccion.trim()) {
+      setFeedback({ type: "err", msg: "Indica el motivo de la corrección" });
+      return;
+    }
+    setSaving(true);
+    setFeedback({ type: "", msg: "" });
+    try {
+      const nueva = await api.corregirConsulta(idConsulta, {
+        diagnostico: form.diagnostico,
+        indicaciones: form.indicaciones,
+        observaciones: form.observaciones,
+        fecha_seguimiento: form.fecha_seguimiento || null,
+        id_usuario: user.id,
+        motivo: motivoCorreccion,
+      });
+      setConsultaExistente(nueva);
+      setIdConsulta(nueva.id_consulta);
+      setVersionActual(nueva.version || versionActual + 1);
+      setEntregado(false);
+      setModoCorreccion(false);
+      setMotivoCorreccion("");
+      setFeedback({ type: "ok", msg: `Consulta corregida. Nueva versión: ${nueva.version || ""}.` });
+    } catch (err) {
+      setFeedback({ type: "err", msg: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEntregar = async () => {
+    if (!idConsulta) return;
+    try {
+      await api.entregarConsulta(idConsulta);
+      setEntregado(true);
+      setFeedback({ type: "ok", msg: "Diagnóstico marcado como entregado." });
+    } catch (err) {
+      setFeedback({ type: "err", msg: err.message });
+    }
+  };
+
+  const descargarNota = () => {
+    const doc = new jsPDF({ unit: "mm", format: [139.7, 215.9] });
+    const W = 139.7;
+    let y = 16;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text("NOTA DE CONSULTA MÉDICA", W / 2, y, { align: "center" });
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("Centro Médico Público de Zaculeu", W / 2, y, { align: "center" });
+    y += 10;
+    doc.setFontSize(10);
+    doc.text(`Paciente: ${paciente?.nombre_completo || ""}`, 12, y); y += 6;
+    doc.text(`DPI: ${paciente?.dpi || "—"}    Edad: ${paciente?.edad || "—"} años`, 12, y); y += 6;
+    doc.text(`Fecha: ${new Date().toLocaleDateString("es-GT")}    Versión: ${versionActual}`, 12, y); y += 8;
+    const block = (title, text) => {
+      doc.setFont("helvetica", "bold");
+      doc.text(title, 12, y); y += 5;
+      doc.setFont("helvetica", "normal");
+      const lines = doc.splitTextToSize(text || "—", W - 24);
+      doc.text(lines, 12, y);
+      y += lines.length * 5 + 4;
+    };
+    block("Diagnóstico:", form.diagnostico);
+    block("Indicaciones / Tratamiento:", form.indicaciones);
+    if (form.observaciones) block("Observaciones:", form.observaciones);
+    if (form.fecha_seguimiento) block("Fecha de seguimiento:", form.fecha_seguimiento);
+    doc.save(`nota-consulta-${paciente?.dpi || paciente?.id_paciente || "paciente"}.pdf`);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (modoCorreccion) return handleCorregir();
     if (!id_visita || !user.id) {
       setFeedback({ type: "err", msg: "Falta visita o médico" });
       return;
@@ -131,7 +214,7 @@ const fetchData = async () => {
       setConsultaExistente(data);
       setTimeout(() => {
         if (paciente?.id_paciente) navigate(`/expedientes?id=${paciente.id_paciente}`);
-        else navigate("/expedientes");
+        else navigate(-1);
       }, 900);
     } catch (err) {
       setFeedback({ type: "err", msg: err.message });
@@ -207,8 +290,9 @@ const fetchData = async () => {
                 </div>
                 <span className="text-xs text-[#424752]">Registrado: {new Date(preconsulta.fecha_hora_registro).toLocaleString("es-GT")}</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <VitalCard label="Presión" value={`${preconsulta.presion_sistolica || "—"}/${preconsulta.presion_diastolica || "—"}`} unit="mmHg" icon={HeartPulse} color="text-[#e53e3e]" alert={isAlert("presion_sistolica", preconsulta.presion_sistolica) || isAlert("presion_diastolica", preconsulta.presion_diastolica)} />
+                <VitalCard label="Temperatura" value={preconsulta.temperatura || "—"} unit="°C" icon={HeartPulse} color="text-[#e53e3e]" />
                 <VitalCard label="Peso" value={preconsulta.peso || "—"} unit="lb" icon={HeartPulse} color="text-[#805ad5]" />
                 <VitalCard label="Altura" value={preconsulta.talla || "—"} unit="m" icon={HeartPulse} color="text-[#d69e2e]" />
                 <VitalCard label="IMC" value={preconsulta.imc || "—"} unit="" icon={HeartPulse} color="text-[#276749]" />
@@ -224,6 +308,31 @@ const fetchData = async () => {
           )}
 
           <form onSubmit={handleSubmit} className="bg-white border border-[#c2c6d4] rounded-xl p-6 shadow-sm space-y-6">
+            {consultaExistente && (
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="px-2 py-0.5 rounded bg-[#d0e1fb] text-[#00478d] font-semibold">Versión {versionActual}</span>
+                <span className={`px-2 py-0.5 rounded font-semibold ${entregado ? "bg-[#dceeee] text-[#006a71]" : "bg-[#fff5e5] text-[#8a5a00]"}`}>{entregado ? "ENTREGADO" : "SIN ENTREGAR"}</span>
+                <button type="button" onClick={() => setModoCorreccion(m => !m)} className="flex items-center gap-1.5 px-3 py-1.5 border border-[#005eb8] text-[#005eb8] rounded-lg font-semibold text-xs">
+                  <PenLine size={14} /> {modoCorreccion ? "Cancelar corrección" : "Corregir consulta"}
+                </button>
+                {!entregado && (
+                  <button type="button" onClick={handleEntregar} className="flex items-center gap-1.5 px-3 py-1.5 border border-[#006a71] text-[#006a71] rounded-lg font-semibold text-xs">
+                    <PackageCheck size={14} /> Marcar como entregado
+                  </button>
+                )}
+                <button type="button" onClick={descargarNota} className="flex items-center gap-1.5 px-3 py-1.5 border border-[#c2c6d4] text-[#424752] rounded-lg font-semibold text-xs">
+                  <Download size={14} /> Descargar nota
+                </button>
+              </div>
+            )}
+
+            {modoCorreccion && (
+              <div className="bg-[#fff5e5] border border-[#e6b95c] rounded-lg p-3">
+                <label className="block text-sm font-semibold mb-1.5 text-[#8a5a00]">Motivo de la corrección <span className="text-[#ba1a1a]">*</span></label>
+                <input type="text" value={motivoCorreccion} onChange={(e)=>setMotivoCorreccion(e.target.value)} placeholder="Ej. se corrigió el diagnóstico, error de digitación..." className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" />
+                <p className="text-xs text-[#8a5a00] mt-1">Se guardará como una nueva versión y quedará registrado en la auditoría.</p>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-semibold mb-1.5">Diagnóstico <span className="text-[#ba1a1a]">*</span></label>
               <textarea name="diagnostico" required value={form.diagnostico} onChange={handleChange} rows={4}
@@ -289,7 +398,7 @@ const fetchData = async () => {
                 Panel Control
               </button>
               <button type="submit" disabled={saving} className="px-6 py-2.5 bg-[#00478d] hover:bg-[#003366] text-white rounded-lg font-bold transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : <><FileText size={16} /> Finalizar Consulta</>}
+                {saving ? <><Loader2 size={16} className="animate-spin" /> Guardando...</> : modoCorreccion ? <><PenLine size={16} /> Guardar corrección</> : <><FileText size={16} /> Finalizar Consulta</>}
               </button>
             </div>
           </form>

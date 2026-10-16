@@ -10,6 +10,7 @@ import {
 import { api } from "../services/api";
 import Layout from "../components/Layout";
 import MapaBrotes from "../components/MapaBrotes";
+import GraficaIMCEmbarazo from "../components/GraficaIMCEmbarazo";
 import { CATALOGO_LUGARES, LUGARES } from "../services/zonas";
 
 const PALETA = {
@@ -191,6 +192,8 @@ export default function Estadisticas() {
   const [medicamentos, setMedicamentos] = useState({ top: [], total_unidades: 0 });
   const [diagnosticos, setDiagnosticos] = useState([]);
   const [pacientes, setPacientes] = useState({});
+  const [embarazadas, setEmbarazadas] = useState({ resumen: null, detalle: [] });
+  const [pacienteGrafica, setPacienteSel] = useState("");
   const [mapa, setMapa] = useState([]);
   const [visibles, setVisibles] = useState({ total: true, completadas: true });
 
@@ -200,16 +203,18 @@ export default function Estadisticas() {
     setLoading(true);
     setError(null);
     try {
-      const [v, m, diag, p] = await Promise.all([
+      const [v, m, diag, p, emb] = await Promise.all([
         api.getEstadisticasVisitas(d, h),
         api.getEstadisticasMedicamentos(d, h),
         api.getEstadisticasDiagnosticos(d, h),
         api.getEstadisticasPacientes(),
+        api.getEstadisticasEmbarazadasIMC(d, h),
       ]);
       setVisitas(v);
       setMedicamentos(m);
       setDiagnosticos(diag);
       setPacientes(p);
+      setEmbarazadas(emb);
     } catch (err) {
       console.error(err);
       setError("No se pudieron cargar las estadísticas. Verifique la conexión con el backend.");
@@ -238,6 +243,16 @@ export default function Estadisticas() {
     cargarMapa(desde, hasta);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Selecciona automáticamente la primera embarazada para la gráfica de seguimiento.
+  useEffect(() => {
+    if (!pacienteGrafica && embarazadas.detalle?.length) {
+      setPacienteSel(String(embarazadas.detalle[0].id_paciente));
+    }
+  }, [embarazadas, pacienteGrafica]);
+
+  const embarazadaSel =
+    embarazadas.detalle?.find((p) => String(p.id_paciente) === pacienteGrafica) || null;
 
   const aplicarRango = (dias) => {
     const d = inicioISO(dias);
@@ -667,6 +682,110 @@ export default function Estadisticas() {
                   <Bar dataKey="cantidad" fill={PALETA.verde} radius={[0, 4, 4, 0]} barSize={18} />
                 </BarChart>
               </ResponsiveContainer>
+            )}
+          </Card>
+
+          <Card
+            title="IMC en pacientes embarazadas"
+            subtitle="Clasificación según IMC pregestacional (OMS) en el período"
+            className="xl:col-span-2"
+          >
+            {!embarazadas.resumen || embarazadas.resumen.total_embarazadas === 0 ? (
+              <EmptyChart texto="No hay pacientes embarazadas registradas en el período." />
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                  {[
+                    { label: "Bajo peso", key: "bajo_peso", sub: "< 18.5", color: "border-l-[#f59e0b]", vb: "text-[#b45309]" },
+                    { label: "Normal", key: "normal", sub: "18.5 – 24.9", color: "border-l-[#006a71]", vb: "text-[#006a71]" },
+                    { label: "Sobrepeso", key: "sobrepeso", sub: "25.0 – 29.9", color: "border-l-[#ca8a04]", vb: "text-[#a16207]" },
+                    { label: "Obesidad I", key: "obesidad1", sub: "30.0 – 34.9", color: "border-l-[#ea580c]", vb: "text-[#c2410c]" },
+                    { label: "Obesidad II", key: "obesidad2", sub: "35.0 – 39.9", color: "border-l-[#dc2626]", vb: "text-[#b91c1c]" },
+                    { label: "Obesidad III", key: "obesidad3", sub: "≥ 40", color: "border-l-[#991b1b]", vb: "text-[#7f1d1d]" },
+                  ].map((c) => (
+                    <div key={c.key} className={`bg-white border border-[#c2c6d4] border-l-4 ${c.color} rounded-lg p-4`}>
+                      <div className="font-semibold text-xs text-[#424752]">{c.label}</div>
+                      <div className={`font-bold text-2xl mt-1 ${embarazadas.resumen[c.key] > 0 ? c.vb : "text-[#c2c6d4]"}`}>
+                        {embarazadas.resumen[c.key] ?? 0}
+                      </div>
+                      <div className="text-[11px] text-[#424752] mt-0.5">IMC {c.sub}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-[#424752]">
+                  Total embarazadas en el período: <strong>{embarazadas.resumen.total_embarazadas}</strong> · con IMC registrado: <strong>{embarazadas.resumen.total_con_imc}</strong>
+                </div>
+                {embarazadas.detalle.length > 0 && (
+                  <div className="overflow-x-auto border border-[#c2c6d4] rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-[#f2f4f7] text-left text-[#424752]">
+                          <th className="px-4 py-2.5 font-semibold">Paciente</th>
+                          <th className="px-4 py-4 font-semibold">IMC pregestacional</th>
+                          <th className="px-4 py-4 font-semibold">Peso habitual</th>
+                          <th className="px-4 py-4 font-semibold">FUR</th>
+                          <th className="px-6 py-4 font-semibold">FPP</th>
+                          <th className="px-6 py-4 font-semibold">Semanas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#eceef0]">
+                        {embarazadas.detalle.map((p) => (
+                          <tr key={p.id_paciente}>
+                            <td className="px-6 py-3 font-semibold">{p.nombre_completo}</td>
+                            <td className="px-6 py-3">{p.imc_pregestacional || "—"}</td>
+                            <td className="px-6 py-3">{p.peso_habitual_kg ? `${p.peso_habitual_kg} kg` : "—"}</td>
+                            <td className="px-6 py-3">{p.fur ? new Date(p.fur).toLocaleDateString("es-GT") : "—"}</td>
+                            <td className="px-6 py-3">{p.fpp ? new Date(p.fpp).toLocaleDateString("es-GT") : "—"}</td>
+                            <td className="px-6 py-3">{p.semana_gestacion || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="border-t border-[#eceef0] pt-5">
+                  <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+                    <div>
+                      <div className="font-bold text-[#191c1e]">Seguimiento por semanas de gestación</div>
+                      <div className="text-xs text-[#424752] mt-1">
+                        Seleccione una paciente o ajuste la semana y el IMC: el punto negro y la flecha
+                        se actualizan automáticamente.
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="grafica-paciente" className="text-xs font-semibold text-[#424752]">
+                        Paciente
+                      </label>
+                      <select
+                        id="grafica-paciente"
+                        value={pacienteGrafica}
+                        onChange={(e) => setPacienteSel(e.target.value)}
+                        className="border border-[#c2c6d4] rounded px-2 py-1.5 text-sm bg-white"
+                      >
+                        {(embarazadas.detalle || []).map((p) => (
+                          <option key={p.id_paciente} value={String(p.id_paciente)}>
+                            {p.nombre_completo}
+                            {p.semana_gestacion ? ` · S${p.semana_gestacion}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[10px] text-[#727783]">
+                        El IMC se inicializa con el pregestacional; ajústelo con la medición actual.
+                      </span>
+                    </div>
+                  </div>
+                  <GraficaIMCEmbarazo
+                    key={pacienteGrafica || "manual"}
+                    semanaInicial={embarazadaSel?.semana_gestacion ?? undefined}
+                    imcInicial={
+                      embarazadaSel?.imc_pregestacional != null
+                        ? Number(embarazadaSel.imc_pregestacional)
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
             )}
           </Card>
 

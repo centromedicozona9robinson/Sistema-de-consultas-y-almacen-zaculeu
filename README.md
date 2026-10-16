@@ -76,12 +76,18 @@ frontend/
 
 ## Configuración
 
-1. Crear la base de datos y aplicar el esquema:
+## Configuración
+
+1. Crear la base de datos (basta crearla vacía):
 
    ```bash
    psql -U postgres -h localhost -d postgres -c "CREATE DATABASE zaculeu_db;"
-   psql -U postgres -h localhost -d zaculeu_db -f backend/schema.sql
    ```
+
+   > El backend aplica `backend/schema.sql` automáticamente al arrancar
+   > (también aplica migraciones y semillas). No es necesario ejecutar SQL a
+   > mano: la base se crea/actualiza sola cada vez que inicia el servidor.
+   > El comando manual solo es opcional si se prefiere dejarla lista de una vez.
 
 2. Configurar `backend/.env`:
 
@@ -112,6 +118,20 @@ npm run dev
 ```
 
 Abrir en el navegador: `http://localhost:5173`
+
+### Datos de demostración (opcional)
+
+Para poblar la base con pacientes, visitas, correcciones, embarazadas con IMC,
+medicamentos y dispensaciones y poder ver todas las estadísticas:
+
+```bash
+cd backend
+npm run seed:demo
+```
+
+El script (`backend/seed_demo.sql`) es idempotente y **no debe usarse en
+producción**. Identifica sus registros por `paciente.dpi LIKE '9000%'` y
+`medicamento.nombre_medicamento LIKE 'DEMO %'`, los borra y los regenera.
 
 ## Credenciales de demostración
 
@@ -146,8 +166,9 @@ con la base de datos en **Neon** (PostgreSQL serverless). Sigue estos pasos:
    ```
    postgres://USER:PASSWORD@HOST.neon.tech/dbname?sslmode=require
    ```
-3. (Opcional pero recomendado) Ejecuta `backend/schema.sql` contra esa base usando
-   el editor SQL de Neon o `psql` para crear las tablas y datos iniciales.
+3. Ejecuta `backend/schema.sql` contra esa base (opcional). **No es necesario**:
+   al arrancar, el backend aplica el esquema, las migraciones y las semillas
+   automáticamente, por lo que una base vacía queda lista sin intervención manual.
 
 ### 2. Backend en Render
 

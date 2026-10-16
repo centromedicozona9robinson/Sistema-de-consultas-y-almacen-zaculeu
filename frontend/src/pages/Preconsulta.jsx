@@ -8,7 +8,7 @@ import Layout from "../components/Layout";
 const VITAL_RANGES = {
   presion_arterial: { label: "PRESIÓN ARTERIAL", unit: "mmHg", icon: HeartPulse, color: "#e53e3e", type: "text", placeholder: "120/80" },
   temperatura: { label: "TEMPERATURA", unit: "°C", icon: HeartPulse, color: "#e53e3e", step: 0.1, min: 34, max: 42 },
-  peso: { label: "PESO", unit: "kg", icon: Weight, color: "#805ad5", step: 0.1, min: 2, max: 660 },
+  peso: { label: "PESO", unit: "lb", icon: Weight, color: "#805ad5", step: 0.1, min: 2, max: 660 },
   talla: { label: "ALTURA", unit: "m", icon: Ruler, color: "#d69e2e", step: 0.01, min: 0.3, max: 2.5 },
 };
 
@@ -37,9 +37,35 @@ export default function Preconsulta() {
   const [fpp, setFpp] = useState('');
   const [semanaGest, setSemanaGest] = useState('');
   const [tipoVisita, setTipoVisita] = useState({ consulta:false, reconsulta:false });
+  const [motivo, setMotivo] = useState('');
+  const [motivosPrevios, setMotivosPrevios] = useState([]);
+  const [cronicasPaciente, setCronicasPaciente] = useState([]);
+  const [mostrarCronicos, setMostrarCronicos] = useState(false);
   const [factores, setFactores] = useState({ sobrepeso:false, obesidad:false, circ_abdominal:false, riesgo_ecv_elevado:false, circ_abdominal_cm:'', circ_abdominal_fecha:'', riesgo_ecv_observacion:'' });
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
+
+  const cargarMotivosPrevios = async (idp) => {
+    try {
+      const r = await api.getMotivosPrevios(idp, id_visita || undefined);
+      setMotivosPrevios([...(r.motivos || []), ...(r.cronicas || [])]);
+    } catch (e) { setMotivosPrevios([]); }
+  };
+
+  const cargarDatosCronicos = async (pac) => {
+    if (!pac?.id_paciente) return;
+    try {
+      const edadCalc = pac.fecha_nacimiento ? new Date().getFullYear() - new Date(pac.fecha_nacimiento).getFullYear() : null;
+      const cat = await api.getCatalogoEnfermedades(edadCalc, pac.sexo);
+      setCatalogoCronicos(cat);
+    } catch (e) {}
+    try {
+      const cr = await api.getEnfermedadesCronicasPaciente(pac.id_paciente);
+      setCronicasPaciente(cr);
+      setCronicosSel(cr.map(x => x.id_enfermedad_cronica));
+    } catch (e) {}
+    cargarMotivosPrevios(pac.id_paciente);
+  };
 
 const fetchData = async () => {
     if (!id_visita && !id_paciente) {
@@ -65,7 +91,9 @@ const fetchData = async () => {
             dpi: v.dpi,
             edad: v.edad,
             sexo: v.sexo,
+            fecha_nacimiento: v.fecha_nacimiento,
           });
+          cargarDatosCronicos(v);
         } catch (e) {
           console.error(e);
         }
@@ -88,6 +116,7 @@ const fetchData = async () => {
           if (pre.sintomas !== undefined) formInit.sintomas = pre.sintomas;
           if (pre.hallazgos !== undefined) formInit.hallazgos = pre.hallazgos;
           if (pre.recetado !== undefined) formInit.recetado = pre.recetado;
+          if (pre.motivo_mapeado) setMotivo(pre.motivo_mapeado);
           setForm(formInit);
           setImc(computeImc(formInit));
           setAlertas(getAlertas(formInit));
@@ -97,15 +126,7 @@ const fetchData = async () => {
       if (id_paciente) {
         const exp = await api.getExpediente(id_paciente);
         setPaciente(exp.paciente);
-        try {
-          const edadCalc = exp.paciente.fecha_nacimiento ? new Date().getFullYear() - new Date(exp.paciente.fecha_nacimiento).getFullYear() : null;
-          const cat = await api.getCatalogoEnfermedades(edadCalc, exp.paciente.sexo);
-          setCatalogoCronicos(cat);
-        } catch (e) {}
-        try {
-          const cr = await api.getEnfermedadesCronicasPaciente(exp.paciente.id_paciente);
-          setCronicosSel(cr.map(x=>x.id_enfermedad_cronica));
-        } catch (e) {}
+        cargarDatosCronicos(exp.paciente);
         if (exp.paciente.esta_embarazada) setEstaEmbarazada(true);
         if (exp.paciente.imc_pregestacional) setImcPreg(exp.paciente.imc_pregestacional);
         if (exp.paciente.peso_habitual_kg) setPesoHabitual(exp.paciente.peso_habitual_kg);
@@ -128,7 +149,8 @@ const fetchData = async () => {
     const p = parseFloat(f.peso);
     const t = parseFloat(f.talla);
     if (!p || !t || t <= 0) return null;
-    return (p / (t * t)).toFixed(2);
+    // Peso en libras → kg (÷2.2); IMC = kg / m²
+    return ((p / 2.2) / (t * t)).toFixed(2);
   };
 
 
@@ -177,6 +199,38 @@ function clasificarEdad(fechaNac, fechaRef) {
     setAlertas(getAlertas(next));
   };
 
+  const normaliza = (s) => (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+  // Tipo de visita automático por morbilidad: si el motivo/enfermedad ya se
+  // registró antes → Reconsulta; si es nuevo → Primera Consulta; si hay de
+  // ambos → AMBAS.
+  useEffect(() => {
+    const selNombres = (catalogoCronicos || [])
+      .filter((c) => cronicosSel.includes(c.id_enfermedad_cronica))
+      .map((c) => c.nombre);
+    const actuales = [...(motivo || "").split(/[,\n;]+/), ...selNombres].map(normaliza).filter(Boolean);
+    if (actuales.length === 0) return;
+    const previos = (motivosPrevios || []).map(normaliza).filter(Boolean);
+    const esPrevio = (m) => previos.some((p) => p === m || p.includes(m) || m.includes(p));
+    const nuevas = actuales.filter((m) => !esPrevio(m));
+    const viejas = actuales.filter(esPrevio);
+    setTipoVisita({ consulta: nuevas.length > 0, reconsulta: viejas.length > 0 });
+  }, [motivo, cronicosSel, motivosPrevios, catalogoCronicos]);
+
+  // Factores de riesgo automáticos según IMC (peso en libras)
+  useEffect(() => {
+    const p = parseFloat(form.peso);
+    const t = parseFloat(form.talla);
+    const imcCalc = p && t && t > 0 ? ((p / 2.2) / (t * t)) : null;
+    setFactores((f) => ({
+      ...f,
+      sobrepeso: imcCalc >= 25 && imcCalc < 30,
+      obesidad: imcCalc >= 30,
+      sobrepeso_imc: imcCalc >= 25 && imcCalc < 30 ? imcCalc.toFixed(2) : null,
+      obesidad_imc: imcCalc >= 30 ? imcCalc.toFixed(2) : null,
+    }));
+  }, [form.peso, form.talla]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user.id) {
@@ -201,13 +255,30 @@ function clasificarEdad(fechaNac, fechaRef) {
         visitaId = visita.id_visita;
       }
       const tipoV = tipoVisita.consulta && tipoVisita.reconsulta ? 'AMBAS' : (tipoVisita.consulta ? 'CONSULTA' : (tipoVisita.reconsulta ? 'RECONSULTA' : null));
-      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, sintomas: form.sintomas||null, recetado: form.recetado||null };
+      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, motivo_mapeado: motivo || null, sintomas: form.sintomas||null, recetado: form.recetado||null };
       delete data.imc;
       await api.registrarPreconsulta(data);
+
+      // Guardar enfermedades crónicas seleccionadas (altas y bajas)
+      if (paciente?.id_paciente) {
+        try {
+          for (const ec of cronicosSel) {
+            if (!cronicasPaciente.some((x) => x.id_enfermedad_cronica === ec)) {
+              await api.agregarEnfermedadCronicaPaciente(paciente.id_paciente, { id_enfermedad_cronica: ec, id_usuario_registro: user.id });
+            }
+          }
+          for (const ex of cronicasPaciente) {
+            if (!cronicosSel.includes(ex.id_enfermedad_cronica)) {
+              await api.eliminarEnfermedadCronicaPaciente(ex.id_paciente_enfermedad_cronica);
+            }
+          }
+        } catch (e) { console.error(e); }
+      }
+
       try {
         const p = parseFloat(form.peso);
         const t = parseFloat(form.talla);
-        const imcCalc = p && t && t > 0 ? (p / (t * t)) : null;
+        const imcCalc = p && t && t > 0 ? ((p / 2.2) / (t * t)) : null;
         await api.guardarFactoresRiesgo({
           id_visita: visitaId,
           id_usuario_registro: user.id,
@@ -329,18 +400,43 @@ function clasificarEdad(fechaNac, fechaRef) {
             <div className="text-base font-bold">{clasificarEdad(paciente?.fecha_nacimiento, visita?.fecha_visita)}</div>
           </div>
 
-          <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 mb-4">
-            <div className="text-sm font-semibold mb-2">Tipo de Visita</div>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={tipoVisita.consulta} onChange={(e)=>setTipoVisita(t=>({...t, consulta:e.target.checked}))} />
-                <span>CONSULTA</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={tipoVisita.reconsulta} onChange={(e)=>setTipoVisita(t=>({...t, reconsulta:e.target.checked}))} />
-                <span>RECONSULTA</span>
-              </label>
-              {tipoVisita.consulta && tipoVisita.reconsulta && <span className="px-2 py-0.5 bg-[#d0e1fb] text-[#00478d] text-xs rounded">AMBAS</span>}
+          <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 mb-4 space-y-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1.5">Motivo de consulta / Morbilidad</label>
+              <input type="text" value={motivo} onChange={(e)=>setMotivo(e.target.value)} placeholder="Ej. Diabetes, Hipertensión, Diarrea..." className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" />
+              <p className="text-xs text-[#424752] mt-1">La Primera Consulta o Reconsulta se calcula automáticamente según si el motivo/enfermedad ya se registró antes.</p>
+            </div>
+
+            <div>
+              <button type="button" onClick={()=>setMostrarCronicos(v=>!v)} className="text-sm font-semibold text-[#005eb8]">
+                {mostrarCronicos ? "▾" : "▸"} Enfermedades crónicas {cronicosSel.length > 0 ? `(${cronicosSel.length} seleccionada${cronicosSel.length>1?"s":""})` : ""}
+              </button>
+              {mostrarCronicos && (
+                <div className="mt-2 border border-[#c2c6d4] rounded-lg max-h-52 overflow-y-auto p-2 grid sm:grid-cols-2 gap-1">
+                  {(catalogoCronicos||[]).length === 0 && <div className="text-xs text-[#424752] p-1">Sin catálogo disponible.</div>}
+                  {(catalogoCronicos||[]).map((c) => (
+                    <label key={c.id_enfermedad_cronica} className="flex items-start gap-2 text-sm p-1 rounded hover:bg-[#f2f4f6]">
+                      <input type="checkbox" className="mt-0.5" checked={cronicosSel.includes(c.id_enfermedad_cronica)} onChange={(e)=>setCronicosSel(s => e.target.checked ? [...s, c.id_enfermedad_cronica] : s.filter(x=>x!==c.id_enfermedad_cronica))} />
+                      <span>{c.nombre}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-sm font-semibold mb-2">Tipo de Visita (automático por morbilidad)</div>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={tipoVisita.consulta} onChange={(e)=>setTipoVisita(t=>({...t, consulta:e.target.checked}))} />
+                  <span>PRIMERA CONSULTA</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={tipoVisita.reconsulta} onChange={(e)=>setTipoVisita(t=>({...t, reconsulta:e.target.checked}))} />
+                  <span>RECONSULTA</span>
+                </label>
+                {tipoVisita.consulta && tipoVisita.reconsulta && <span className="px-2 py-0.5 bg-[#d0e1fb] text-[#00478d] text-xs rounded">AMBAS</span>}
+              </div>
             </div>
           </div>
 
@@ -500,15 +596,4 @@ function VitalInput({ name, range, value, isOut, onChange }) {
     </div>
   );
 }
-  useEffect(() => {
-    const p = parseFloat(form.peso);
-    const t = parseFloat(form.talla);
-    const imcCalc = p && t && t > 0 ? (p / (t * t)) : null;
-    setFactores(f => ({
-      ...f,
-      sobrepeso: imcCalc >= 25 && imcCalc < 30,
-      obesidad: imcCalc >= 30,
-      sobrepeso_imc: imcCalc >= 25 && imcCalc < 30 ? imcCalc.toFixed(2) : null,
-      obesidad_imc: imcCalc >= 30 ? imcCalc.toFixed(2) : null,
-    }));
-  }, [form.peso, form.talla]);
+

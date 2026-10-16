@@ -4,6 +4,7 @@
 -- ============================================================
 
 -- 1. PRECONSULTA - Campos adicionales
+ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS temperatura NUMERIC(4,1);
 ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS sintomas TEXT;
 ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS hallazgos TEXT;
 ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS recetado TEXT;
@@ -49,10 +50,18 @@ CREATE TABLE IF NOT EXISTS enfermedad_cronica (
   sexo_aplica CHAR(1) NOT NULL CHECK (sexo_aplica IN ('M','F','A')),
   requiere_localizacion BOOLEAN DEFAULT FALSE,
   activa BOOLEAN DEFAULT TRUE,
-  orden SMALLINT DEFAULT 0
+  orden SMALLINT DEFAULT 0,
+  CONSTRAINT uq_enfermedad_cronica_nombre UNIQUE (grupo, nombre)
 );
 CREATE INDEX IF NOT EXISTS idx_ec_grupo ON enfermedad_cronica(grupo);
 CREATE INDEX IF NOT EXISTS idx_ec_activa ON enfermedad_cronica(activa);
+
+-- Limpieza de duplicados + índice único (para bases creadas antes del
+-- constraint anterior). Hace idempotente la semilla del catálogo.
+DELETE FROM enfermedad_cronica a USING enfermedad_cronica b
+ WHERE a.grupo = b.grupo AND a.nombre = b.nombre
+   AND a.id_enfermedad_cronica > b.id_enfermedad_cronica;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_enfermedad_cronica_nombre ON enfermedad_cronica(grupo, nombre);
 
 -- 5. PACIENTE - ENFERMEDADES CRÓNICAS (RELACIÓN)
 CREATE TABLE IF NOT EXISTS paciente_enfermedad_cronica (
@@ -105,7 +114,21 @@ CREATE TABLE IF NOT EXISTS auditoria_correccion (
 CREATE INDEX IF NOT EXISTS idx_ac_visita ON auditoria_correccion(id_visita);
 CREATE INDEX IF NOT EXISTS idx_ac_fecha ON auditoria_correccion(fecha_hora);
 
--- 8. SEED - CATÁLOGO ENFERMEDADES CRÓNICAS
+-- 8. ÍNDICES ÚNICOS (una sola versión original por visita, un factor por visita)
+ALTER TABLE consulta_medica DROP CONSTRAINT IF EXISTS consulta_medica_id_visita_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_consulta_original_visita ON consulta_medica (id_visita) WHERE tipo_version = 'original';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_factor_riesgo_visita ON factor_riesgo (id_visita);
+
+-- 9. CACHÉ DE GEOCODIFICACIÓN (mapa de brotes)
+CREATE TABLE IF NOT EXISTS geocodigo_cache (
+  direccion TEXT PRIMARY KEY,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  lugar TEXT,
+  fecha TIMESTAMP DEFAULT NOW()
+);
+
+-- 10. SEED - CATÁLOGO ENFERMEDADES CRÓNICAS
 INSERT INTO enfermedad_cronica (grupo, nombre, edad_min, edad_max, sexo_aplica, requiere_localizacion, orden) VALUES
 ('Diabetes Mellitus','Diabetes Mellitus Pct. 0 a 19 años',0,19,'A',false,1),
 ('Diabetes Mellitus','Diabetes Mellitus Pct. 20 a 39 años',20,39,'A',false,2),

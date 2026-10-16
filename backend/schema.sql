@@ -44,11 +44,17 @@ CREATE TABLE IF NOT EXISTS usuario (
 );
 
 -- Contraseñas iniciales: admin=Admin123!, directora=Directora123!, DOC=Doctor1234, Enfer=Enfer1234
-INSERT INTO usuario (nombre_completo, nombre_usuario, contrasena_hash, id_rol) VALUES
-  ('Administrador del Sistema', 'admin',    '$2b$10$F8Sk8kjm1cts.LwRnOKm0uSiI8rLMHMfrYlO18DaHgV1GbLFCdbfu', 1),
-  ('Dra. Claudia Ramos',        'directora','$2b$10$fSg6BoCmdqZWN4XpManN/.fbcDyqOIQS5m0zNTxTIxH/ZMtHBWfG6', 2),
-  ('Dr. Julián Ortega',         'DOC',      '$2b$10$Xx89CAT3IFMhrF2fTtqMTe./9.O4EgU2hmrPLr0/mgSBJHka7wE6u', 3),
-  ('Ana López (Enfermería)',    'Enfer',    '$2b$10$Za.BM4XOm3DNDxIitqV55OYbnCmU9JBAsD7.0.3JtTC0BNQwm3/O6', 4)
+-- El rol se resuelve por nombre (no por id) para que la semilla funcione
+-- aunque los ids de la tabla rol no coincidan con los esperados.
+INSERT INTO usuario (nombre_completo, nombre_usuario, contrasena_hash, id_rol)
+SELECT v.nombre_completo, v.nombre_usuario, v.contrasena_hash, r.id_rol
+FROM (VALUES
+  ('Administrador del Sistema', 'admin',    '$2b$10$F8Sk8kjm1cts.LwRnOKm0uSiI8rLMHMfrYlO18DaHgV1GbLFCdbfu', 'administrador'),
+  ('Dra. Claudia Ramos',        'directora','$2b$10$fSg6BoCmdqZWN4XpManN/.fbcDyqOIQS5m0zNTxTIxH/ZMtHBWfG6', 'director'),
+  ('Dr. Julián Ortega',         'DOC',      '$2b$10$Xx89CAT3IFMhrF2fTtqMTe./9.O4EgU2hmrPLr0/mgSBJHka7wE6u', 'medico'),
+  ('Ana López (Enfermería)',    'Enfer',    '$2b$10$Za.BM4XOm3DNDxIitqV55OYbnCmU9JBAsD7.0.3JtTC0BNQwm3/O6', 'enfermera')
+) AS v(nombre_completo, nombre_usuario, contrasena_hash, nombre_rol)
+JOIN rol r ON r.nombre_rol = v.nombre_rol
 ON CONFLICT (nombre_usuario) DO NOTHING;
 
 -- ============================================================
@@ -81,6 +87,18 @@ CREATE TABLE IF NOT EXISTS paciente (
   alergias              TEXT,
   enfermedades_cronicas TEXT,
   medicamentos_actuales TEXT,
+  esta_embarazada       BOOLEAN       NOT NULL DEFAULT FALSE,
+  embarazo_finalizado   BOOLEAN       NOT NULL DEFAULT FALSE,
+  fecha_embarazo_finalizado TIMESTAMP,
+  usuario_embarazo_finalizado INT REFERENCES usuario(id_usuario),
+  motivo_embarazo_finalizado TEXT,
+  imc_pregestacional    NUMERIC(4,2),
+  peso_habitual_kg      NUMERIC(6,2),
+  fur                   DATE,
+  fpp                   DATE,
+  semana_gestacion      SMALLINT,
+  fecha_registro_embarazo TIMESTAMP,
+  usuario_registro_embarazo INT REFERENCES usuario(id_usuario),
   activo                BOOLEAN       NOT NULL DEFAULT TRUE,
   fecha_registro        TIMESTAMP     NOT NULL DEFAULT NOW(),
   id_usuario_registro   INT           NOT NULL REFERENCES usuario(id_usuario)
@@ -90,11 +108,15 @@ CREATE INDEX IF NOT EXISTS idx_paciente_nombre   ON paciente(nombre_completo);
 CREATE INDEX IF NOT EXISTS idx_paciente_dpi      ON paciente(dpi);
 CREATE INDEX IF NOT EXISTS idx_paciente_cronico  ON paciente(es_cronico);
 
-INSERT INTO paciente (nombre_completo, dpi, fecha_nacimiento, sexo, direccion, es_cronico, enfermedades_cronicas, alergias, medicamentos_actuales, id_usuario_registro) VALUES
-  ('Ricardo Morales',    '2987123450101', '1990-03-15', 'M', 'Zona 9, Zaculeu, Huehuetenango', TRUE,  'Hipertensión Arterial, Rinitis Alérgica', 'Penicilina (Grave), Polen', 'Enalapril 10mg/12h, Cetirizina 10mg/noche', 4),
-  ('Ana Lucía González', '3050987650901', '1996-07-22', 'F', 'Zona 3, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL, 4),
-  ('Jorge Pérez',        '1890223340101', '1962-11-08', 'M', 'Zona 10, Zaculeu, Huehuetenango', TRUE,  'Diabetes Tipo 2', NULL, 'Metformina 850mg/día', 4),
-  ('María Velásquez',    '3122556671301', '2005-04-30', 'F', 'Zona 5, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL, 4)
+INSERT INTO paciente (nombre_completo, dpi, fecha_nacimiento, sexo, direccion, es_cronico, enfermedades_cronicas, alergias, medicamentos_actuales, id_usuario_registro)
+SELECT v.nombre_completo, v.dpi, v.fecha_nacimiento::DATE, v.sexo, v.direccion, v.es_cronico, v.enfermedades_cronicas, v.alergias, v.medicamentos_actuales, u.id_usuario
+FROM (VALUES
+  ('Ricardo Morales',    '2987123450101', '1990-03-15', 'M', 'Zona 9, Zaculeu, Huehuetenango', TRUE,  'Hipertensión Arterial, Rinitis Alérgica', 'Penicilina (Grave), Polen', 'Enalapril 10mg/12h, Cetirizina 10mg/noche'),
+  ('Ana Lucía González', '3050987650901', '1996-07-22', 'F', 'Zona 3, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL),
+  ('Jorge Pérez',        '1890223340101', '1962-11-08', 'M', 'Zona 10, Zaculeu, Huehuetenango', TRUE,  'Diabetes Tipo 2', NULL, 'Metformina 850mg/día'),
+  ('María Velásquez',    '3122556671301', '2005-04-30', 'F', 'Zona 5, Zaculeu, Huehuetenango', FALSE, NULL, NULL, NULL)
+) AS v(nombre_completo, dpi, fecha_nacimiento, sexo, direccion, es_cronico, enfermedades_cronicas, alergias, medicamentos_actuales)
+JOIN usuario u ON u.nombre_usuario = 'Enfer'
 ON CONFLICT (dpi) DO NOTHING;
 
 -- ============================================================
@@ -130,6 +152,16 @@ CREATE TABLE IF NOT EXISTS preconsulta (
   imc                     NUMERIC(4,2),
   alerta_signos           BOOLEAN       NOT NULL DEFAULT FALSE,
   detalle_alerta          TEXT,
+  sintomas                TEXT,
+  hallazgos               TEXT,
+  recetado                TEXT,
+  tipo_visita             TEXT          CHECK (tipo_visita IN ('CONSULTA','RECONSULTA','AMBAS')),
+  es_consulta             BOOLEAN       DEFAULT FALSE,
+  es_reconsulta           BOOLEAN       DEFAULT FALSE,
+  motivo_mapeado          TEXT,
+  corregido_por           INT           REFERENCES usuario(id_usuario),
+  fecha_corregido         TIMESTAMP,
+  motivo_correcion        TEXT,
   fecha_hora_registro     TIMESTAMP     NOT NULL DEFAULT NOW(),
   id_usuario_registro     INT           NOT NULL REFERENCES usuario(id_usuario)
 );
@@ -141,14 +173,25 @@ CREATE INDEX IF NOT EXISTS idx_preconsulta_alerta ON preconsulta(alerta_signos);
 -- ============================================================
 CREATE TABLE IF NOT EXISTS consulta_medica (
   id_consulta           SERIAL        PRIMARY KEY,
-  id_visita             INT           NOT NULL UNIQUE REFERENCES visita(id_visita),
+  id_visita             INT           NOT NULL REFERENCES visita(id_visita),
   diagnostico           TEXT,
   indicaciones          TEXT,
   observaciones         TEXT,
   fecha_seguimiento     DATE,
   fecha_hora_consulta   TIMESTAMP     NOT NULL DEFAULT NOW(),
-  id_medico             INT           NOT NULL REFERENCES usuario(id_usuario)
+  id_medico             INT           NOT NULL REFERENCES usuario(id_usuario),
+  version               INT           NOT NULL DEFAULT 1,
+  tipo_version          VARCHAR(20)   NOT NULL DEFAULT 'original' CHECK (tipo_version IN ('original','corregido')),
+  padre_version         INT           REFERENCES consulta_medica(id_consulta),
+  corregido_por         INT           REFERENCES usuario(id_usuario),
+  fecha_corregido       TIMESTAMP,
+  motivo_correcion      TEXT,
+  entregado             BOOLEAN       NOT NULL DEFAULT FALSE,
+  fecha_entrega         TIMESTAMP
 );
+
+-- Solo una versión 'original' por visita; se permiten varias 'corregido'.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_consulta_original_visita ON consulta_medica (id_visita) WHERE tipo_version = 'original';
 
 -- ============================================================
 --  TABLA: bitacora
@@ -198,7 +241,8 @@ CREATE TABLE IF NOT EXISTS enfermedad_cronica (
   sexo_aplica CHAR(1) NOT NULL CHECK (sexo_aplica IN ('M','F','A')),
   requiere_localizacion BOOLEAN DEFAULT FALSE,
   activa BOOLEAN DEFAULT TRUE,
-  orden SMALLINT DEFAULT 0
+  orden SMALLINT DEFAULT 0,
+  CONSTRAINT uq_enfermedad_cronica_nombre UNIQUE (grupo, nombre)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ec_grupo ON enfermedad_cronica(grupo);
@@ -227,7 +271,7 @@ CREATE INDEX IF NOT EXISTS idx_pxc_ec ON paciente_enfermedad_cronica(id_enfermed
 -- ============================================================
 CREATE TABLE IF NOT EXISTS factor_riesgo (
   id_factor_riesgo SERIAL PRIMARY KEY,
-  id_visita INT NOT NULL REFERENCES visita(id_visita) ON DELETE CASCADE,
+  id_visita INT NOT NULL UNIQUE REFERENCES visita(id_visita) ON DELETE CASCADE,
   sobrepeso BOOLEAN DEFAULT FALSE,
   sobrepeso_imc NUMERIC(4,2),
   obesidad BOOLEAN DEFAULT FALSE,
@@ -415,37 +459,36 @@ ON CONFLICT (nombre_categoria) DO NOTHING;
 
 -- ============================================================
 --  SEED: CATÁLOGO ENFERMEDADES CRÓNICAS
+--  Solo inserta si el catálogo está vacío (idempotente, no depende de que el
+--  índice único exista en bases antiguas).
 -- ============================================================
-INSERT INTO enfermedad_cronica (grupo, nombre, edad_min, edad_max, sexo_aplica, requiere_localizacion, orden) VALUES
--- Diabetes Mellitus
-('Diabetes Mellitus', 'Diabetes Mellitus Pct. 0 a 19 años', 0, 19, 'A', false, 1),
-('Diabetes Mellitus', 'Diabetes Mellitus Pct. 20 a 39 años', 20, 39, 'A', false, 2),
-('Diabetes Mellitus', 'Diabetes Mellitus Pct. 40 a 59 años', 40, 59, 'A', false, 3),
-('Diabetes Mellitus', 'Diabetes Mellitus Pct. 60 y + años', 60, 999, 'A', false, 4),
--- Hipertensión Arterial
-('Hipertensión Arterial', 'Hipertensión Arterial Pct. 0 a 19 años', 0, 19, 'A', false, 5),
-('Hipertensión Arterial', 'Hipertensión Arterial Pct. 20 a 39 años', 20, 39, 'A', false, 6),
-('Hipertensión Arterial', 'Hipertensión Arterial Pct. 40 a 59 años', 40, 59, 'A', false, 7),
-('Hipertensión Arterial', 'Hipertensión Arterial Pct. 60 y + años', 60, 999, 'A', false, 8),
--- Insuficiencia Renal Crónica
-('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 0 a 19 años', 0, 19, 'A', false, 9),
-('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 20 a 39 años', 20, 39, 'A', false, 10),
-('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 40 a 59 años', 40, 59, 'A', false, 11),
-('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 60 y + años', 60, 999, 'A', false, 12),
--- Enfermedades Cardiovasculares
-('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 0 a 19 años', 0, 19, 'A', false, 13),
-('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 20 a 39 años', 20, 39, 'A', false, 14),
-('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 40 a 59 años', 40, 59, 'A', false, 15),
-('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 60 y + años', 60, 999, 'A', false, 16),
--- Cáncer por edad
-('Cáncer', 'Cáncer Pct. De 0 a 19 años', 0, 19, 'A', true, 17),
-('Cáncer', 'Cáncer Pct. De 20 a 39 años', 20, 39, 'A', true, 18),
-('Cáncer', 'Cáncer Pct. De 40 a 59 años', 40, 59, 'A', true, 19),
-('Cáncer', 'Cáncer Pct. De 60 y más años', 60, 999, 'A', true, 20),
--- Localización de Cáncer
-('Cáncer - Localización', 'Cáncer Gástrico', 0, 999, 'A', false, 21),
-('Cáncer - Localización', 'Cáncer Pulmonar', 0, 999, 'A', false, 22),
-('Cáncer - Localización', 'Cáncer de Próstata', 0, 999, 'M', false, 23),
-('Cáncer - Localización', 'Cáncer de Mama', 0, 999, 'F', false, 24),
-('Cáncer - Localización', 'Cáncer de Cérvix', 0, 999, 'F', false, 25)
-ON CONFLICT DO NOTHING;
+INSERT INTO enfermedad_cronica (grupo, nombre, edad_min, edad_max, sexo_aplica, requiere_localizacion, orden)
+SELECT v.grupo, v.nombre, v.edad_min, v.edad_max, v.sexo_aplica, v.requiere_localizacion, v.orden
+FROM (VALUES
+  ('Diabetes Mellitus', 'Diabetes Mellitus Pct. 0 a 19 años', 0, 19, 'A', false, 1),
+  ('Diabetes Mellitus', 'Diabetes Mellitus Pct. 20 a 39 años', 20, 39, 'A', false, 2),
+  ('Diabetes Mellitus', 'Diabetes Mellitus Pct. 40 a 59 años', 40, 59, 'A', false, 3),
+  ('Diabetes Mellitus', 'Diabetes Mellitus Pct. 60 y + años', 60, 999, 'A', false, 4),
+  ('Hipertensión Arterial', 'Hipertensión Arterial Pct. 0 a 19 años', 0, 19, 'A', false, 5),
+  ('Hipertensión Arterial', 'Hipertensión Arterial Pct. 20 a 39 años', 20, 39, 'A', false, 6),
+  ('Hipertensión Arterial', 'Hipertensión Arterial Pct. 40 a 59 años', 40, 59, 'A', false, 7),
+  ('Hipertensión Arterial', 'Hipertensión Arterial Pct. 60 y + años', 60, 999, 'A', false, 8),
+  ('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 0 a 19 años', 0, 19, 'A', false, 9),
+  ('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 20 a 39 años', 20, 39, 'A', false, 10),
+  ('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 40 a 59 años', 40, 59, 'A', false, 11),
+  ('Insuficiencia Renal Crónica', 'Insuficiencia Renal Crónica 60 y + años', 60, 999, 'A', false, 12),
+  ('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 0 a 19 años', 0, 19, 'A', false, 13),
+  ('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 20 a 39 años', 20, 39, 'A', false, 14),
+  ('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 40 a 59 años', 40, 59, 'A', false, 15),
+  ('Enfermedades Cardiovasculares', 'Enfermedades Cardiovasculares 60 y + años', 60, 999, 'A', false, 16),
+  ('Cáncer', 'Cáncer Pct. De 0 a 19 años', 0, 19, 'A', true, 17),
+  ('Cáncer', 'Cáncer Pct. De 20 a 39 años', 20, 39, 'A', true, 18),
+  ('Cáncer', 'Cáncer Pct. De 40 a 59 años', 40, 59, 'A', true, 19),
+  ('Cáncer', 'Cáncer Pct. De 60 y más años', 60, 999, 'A', true, 20),
+  ('Cáncer - Localización', 'Cáncer Gástrico', 0, 999, 'A', false, 21),
+  ('Cáncer - Localización', 'Cáncer Pulmonar', 0, 999, 'A', false, 22),
+  ('Cáncer - Localización', 'Cáncer de Próstata', 0, 999, 'M', false, 23),
+  ('Cáncer - Localización', 'Cáncer de Mama', 0, 999, 'F', false, 24),
+  ('Cáncer - Localización', 'Cáncer de Cérvix', 0, 999, 'F', false, 25)
+) AS v(grupo, nombre, edad_min, edad_max, sexo_aplica, requiere_localizacion, orden)
+WHERE NOT EXISTS (SELECT 1 FROM enfermedad_cronica);

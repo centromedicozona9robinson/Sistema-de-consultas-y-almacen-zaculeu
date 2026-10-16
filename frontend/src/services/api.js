@@ -323,6 +323,12 @@ export const api = {
     const res = await fetch(`${API_URL}/pacientes/enfermedades-cronicas/${id}`, {method:'DELETE'});
     const j = await res.json(); if (!res.ok) throw new Error(j.error||'Error'); return j;
   },
+  getMotivosPrevios: async (id_paciente, excluir) => {
+    const qs = excluir ? `?excluir=${encodeURIComponent(excluir)}` : '';
+    const res = await fetch(`${API_URL}/pacientes/${id_paciente}/motivos-previos${qs}`);
+    if (!res.ok) throw new Error('Error obteniendo motivos previos');
+    return res.json();
+  },
 
   // FACTORES DE RIESGO
   getFactoresRiesgo: async (id_visita) => {

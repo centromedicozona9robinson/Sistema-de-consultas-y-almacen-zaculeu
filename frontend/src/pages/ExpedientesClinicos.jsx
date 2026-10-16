@@ -219,11 +219,13 @@ export default function ExpedientesClinicos() {
         linea("Motivo", v.motivo_consulta || "Consulta general");
         const vitales = [
           v.presion_sistolica ? `Presión ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
+          v.temperatura ? `Temp ${v.temperatura} °C` : "",
           v.peso ? `Peso ${v.peso} lb` : "",
           v.talla ? `Altura ${v.talla} m` : "",
           v.imc ? `IMC ${v.imc}` : "",
         ].filter(Boolean).join("  ·  ");
         linea("Signos vitales", vitales);
+        linea("Motivo / Morbilidad", v.motivo_mapeado || v.motivo_consulta);
         linea("Diagnóstico", v.diagnostico);
         linea("Indicaciones", v.indicaciones);
         if (v.recetas && v.recetas.length) {
@@ -327,6 +329,7 @@ export default function ExpedientesClinicos() {
     seccion("Motivo de Consulta", [v.motivo_consulta || "Consulta general"]);
     const vitales = [
       v.presion_sistolica ? `Presión arterial: ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
+      v.temperatura ? `Temperatura: ${v.temperatura} °C` : "",
       v.peso ? `Peso: ${v.peso} lb` : "",
       v.talla ? `Altura: ${v.talla} m` : "",
       v.imc ? `IMC: ${v.imc}` : "",
@@ -364,6 +367,62 @@ export default function ExpedientesClinicos() {
       || (p.dpi || "").includes(q);
   });
 
+  const descargarListadoPacientes = () => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageW = 210;
+    const M = 14;
+    let y = M;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(0, 94, 184);
+    doc.text("Centro Médico Público de Zaculeu", pageW / 2, y, { align: "center" });
+    y += 6;
+    doc.setFontSize(11);
+    doc.setTextColor(25, 28, 30);
+    doc.text("LISTADO DE PACIENTES", pageW / 2, y, { align: "center" });
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(66, 71, 82);
+    doc.text(`Generado: ${new Date().toLocaleString("es-GT")}  ·  Total: ${pacientesFiltrados.length}`, pageW / 2, y, { align: "center" });
+    y += 6;
+
+    const cols = [
+      { t: "No.", x: M, w: 10 },
+      { t: "Nombre", x: M + 12, w: 78 },
+      { t: "DPI", x: M + 92, w: 34 },
+      { t: "Edad", x: M + 128, w: 16 },
+      { t: "Sexo", x: M + 146, w: 20 },
+      { t: "Registro", x: M + 168, w: 22 },
+    ];
+    const header = () => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(0, 78, 141);
+      doc.setFillColor(240, 245, 255);
+      doc.rect(M, y - 4.5, pageW - M * 2, 6, "F");
+      cols.forEach((c) => doc.text(c.t, c.x, y));
+      y += 5;
+      doc.setDrawColor(194, 198, 212);
+      doc.line(M, y - 4, pageW - M, y - 4);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(25, 28, 30);
+    };
+    header();
+    pacientesFiltrados.forEach((p, i) => {
+      if (y > 285) { doc.addPage(); y = M; header(); }
+      doc.setFontSize(8.5);
+      doc.text(String(i + 1), cols[0].x, y);
+      doc.text(doc.splitTextToSize(p.nombre_completo || "—", cols[1].w)[0], cols[1].x, y);
+      doc.text(p.dpi || "—", cols[2].x, y);
+      doc.text(`${p.edad || "—"}`, cols[3].x, y);
+      doc.text(p.sexo === "M" ? "Masculino" : "Femenino", cols[4].x, y);
+      doc.text(new Date(p.fecha_registro).toLocaleDateString("es-GT"), cols[5].x, y);
+      y += 6;
+    });
+    doc.save(`listado_pacientes_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   const visitasFiltradas = visitas.filter((v) => {
     if (!q) return true;
     const campos = [
@@ -398,11 +457,20 @@ export default function ExpedientesClinicos() {
                   <h1 className="font-bold text-2xl sm:text-3xl">Expedientes Clínicos</h1>
                   <p className="text-[#424752] mt-1">Selecciona un paciente para ver su historial clínico.</p>
                 </div>
-                <div className="flex items-center gap-2 bg-white border border-[#c2c6d4] rounded-md px-4 py-2.5 text-sm text-[#424752] w-full sm:w-72">
-                  <Search size={16} className="shrink-0" />
-                  <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                    placeholder="Buscar por nombre o DPI..."
-                    className="outline-none bg-transparent w-full" />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 bg-white border border-[#c2c6d4] rounded-md px-4 py-2.5 text-sm text-[#424752] w-full sm:w-72">
+                    <Search size={16} className="shrink-0" />
+                    <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+                      placeholder="Buscar por nombre o DPI..."
+                      className="outline-none bg-transparent w-full" />
+                  </div>
+                  <button
+                    onClick={descargarListadoPacientes}
+                    disabled={pacientesFiltrados.length === 0}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#005eb8] hover:bg-[#00478d] text-white rounded-md text-sm font-semibold transition-colors disabled:opacity-60"
+                  >
+                    <Download size={16} /> Descargar listado
+                  </button>
                 </div>
               </div>
               <div className="bg-white border border-[#c2c6d4] rounded-xl overflow-hidden shadow-sm">
@@ -569,6 +637,21 @@ export default function ExpedientesClinicos() {
                             <span className={`text-xs font-semibold px-3 py-1 rounded whitespace-nowrap ${statusStyles[v.estado] || "bg-[#eceef0] text-[#424752]"}`}>
                               {statusLabel[v.estado] || v.estado}
                             </span>
+                            {v.tipo_visita && (
+                              <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap bg-[#f0e6ff] text-[#6b21a8]">
+                                {v.tipo_visita}
+                              </span>
+                            )}
+                            {hasConsulta && (v.version > 1) && (
+                              <span className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap bg-[#d0e1fb] text-[#00478d]">
+                                v{v.version}
+                              </span>
+                            )}
+                            {hasConsulta && (
+                              <span className={`text-xs font-semibold px-2 py-1 rounded whitespace-nowrap ${v.entregado ? "bg-[#dceeee] text-[#006a71]" : "bg-[#fff5e5] text-[#8a5a00]"}`}>
+                                {v.entregado ? "Entregado" : "Sin entregar"}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-[#424752] mt-0.5">
                             {new Date(v.fecha_visita).toLocaleString("es-GT")}
@@ -609,6 +692,7 @@ export default function ExpedientesClinicos() {
                               </div>
                               <div className="grid grid-cols-2 gap-3 text-sm">
                                 <VitalDisplay label="Presión" value={`${v.presion_sistolica || "—"}/${v.presion_diastolica || "—"}`} unit="mmHg" />
+                                <VitalDisplay label="Temperatura" value={v.temperatura || "—"} unit="°C" />
                                 <VitalDisplay label="Peso" value={v.peso || "—"} unit="lb" />
                                 <VitalDisplay label="Altura" value={v.talla || "—"} unit="m" />
                                 <VitalDisplay label="IMC" value={v.imc || "—"} unit="" />

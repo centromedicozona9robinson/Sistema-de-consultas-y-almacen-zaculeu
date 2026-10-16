@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -23,6 +25,22 @@ app.use(cors({
 app.use(express.json());
 
 const pool = require('./config/db');
+
+// Aplica el esquema completo (backend/schema.sql) al arrancar. El archivo usa
+// CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS y semillas con
+// ON CONFLICT, por lo que es idempotente: se puede ejecutar en cada arranque
+// sin borrar datos. Esto garantiza que una base de datos nueva (p. ej. Neon en
+// producción) quede completa sin ejecutar SQL manualmente.
+async function aplicarSchema() {
+    try {
+        const ruta = path.join(__dirname, 'schema.sql');
+        const sql = fs.readFileSync(ruta, 'utf8');
+        await pool.query(sql);
+        console.log('✅ Esquema (schema.sql) aplicado/verificado');
+    } catch (error) {
+        console.error('❌ Error aplicando schema.sql:', error.message);
+    }
+}
 
 // Migraciones idempotentes al arranque.
 // schema.sql usa CREATE TABLE IF NOT EXISTS, así que si una tabla ya existía
@@ -77,6 +95,36 @@ async function aplicarMigraciones() {
         `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS motivo_correcion TEXT`,
         `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS entregado BOOLEAN DEFAULT FALSE`,
         `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS fecha_entrega TIMESTAMP`,
+
+        // Versionado de consulta: la tabla tenía UNIQUE(id_visita) que impedía
+        // guardar varias versiones (original + correcciones). Lo reemplazamos por
+        // un índice único parcial: solo una versión 'original' por visita, pero
+        // permitiendo varias 'corregido'.
+        `ALTER TABLE consulta_medica DROP CONSTRAINT IF EXISTS consulta_medica_id_visita_key`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_consulta_original_visita ON consulta_medica (id_visita) WHERE tipo_version = 'original'`,
+
+        // factor_riesgo: garantizar una fila por visita (antes se duplicaba en
+        // cada guardado). Se eliminan duplicados conservando el más reciente.
+        `DELETE FROM factor_riesgo a USING factor_riesgo b WHERE a.id_visita = b.id_visita AND a.id_factor_riesgo < b.id_factor_riesgo`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_factor_riesgo_visita ON factor_riesgo (id_visita)`,
+
+        // enfermedad_cronica: era posible duplicar el catálogo porque las
+        // semillas usaban ON CONFLICT DO NOTHING sin índice único. Se eliminan
+        // duplicados y se crea el índice que hace idempotente la semilla.
+        `DELETE FROM enfermedad_cronica a USING enfermedad_cronica b WHERE a.grupo = b.grupo AND a.nombre = b.nombre AND a.id_enfermedad_cronica > b.id_enfermedad_cronica`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_enfermedad_cronica_nombre ON enfermedad_cronica (grupo, nombre)`,
+
+        // Columnas defensivas: por si la base venía de una versión muy antigua
+        // donde estas columnas aún no existían (schema.sql no las agrega a una
+        // tabla ya creada). Todas son idempotentes.
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS es_cronico BOOLEAN NOT NULL DEFAULT FALSE`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS alergias TEXT`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS enfermedades_cronicas TEXT`,
+        `ALTER TABLE paciente ADD COLUMN IF NOT EXISTS medicamentos_actuales TEXT`,
+        `ALTER TABLE preconsulta ADD COLUMN IF NOT EXISTS temperatura NUMERIC(4,1)`,
+        `ALTER TABLE consulta_medica ADD COLUMN IF NOT EXISTS version INT DEFAULT 1`,
+        `ALTER TABLE paciente_enfermedad_cronica ADD COLUMN IF NOT EXISTS activa BOOLEAN DEFAULT TRUE`,
+        `ALTER TABLE factor_riesgo ADD COLUMN IF NOT EXISTS circ_abdominal BOOLEAN DEFAULT FALSE`,
     ];
     for (const sql of migraciones) {
         try {
@@ -362,12 +410,18 @@ app.get('/api/expediente/:id', async (req, res) => {
             SELECT v.*,
                    pr.presion_sistolica, pr.presion_diastolica, pr.frecuencia_cardiaca,
                    pr.temperatura, pr.peso, pr.talla, pr.imc, pr.saturacion_oxigeno,
-                   pr.alerta_signos, pr.detalle_alerta,
+                   pr.alerta_signos, pr.detalle_alerta, pr.tipo_visita, pr.es_consulta, pr.es_reconsulta, pr.motivo_mapeado,
                    cm.diagnostico, cm.indicaciones, cm.observaciones, cm.fecha_seguimiento,
+                   cm.version, cm.tipo_version, cm.entregado, cm.fecha_entrega,
                    u.nombre_completo AS nombre_medico
             FROM visita v
             LEFT JOIN preconsulta pr    ON v.id_visita = pr.id_visita
-            LEFT JOIN consulta_medica cm ON v.id_visita = cm.id_visita
+            LEFT JOIN LATERAL (
+                SELECT * FROM consulta_medica cm
+                WHERE cm.id_visita = v.id_visita
+                ORDER BY cm.version DESC, cm.id_consulta DESC
+                LIMIT 1
+            ) cm ON TRUE
             LEFT JOIN usuario u          ON cm.id_medico = u.id_usuario
             WHERE v.id_paciente = $1
             ORDER BY v.fecha_visita DESC
@@ -561,6 +615,7 @@ app.get('/api/visitas/:id', async (req, res) => {
               v.*,
               p.nombre_completo,
               p.dpi,
+              p.fecha_nacimiento,
               DATE_PART('year', AGE(p.fecha_nacimiento))::INT AS edad,
               p.sexo
             FROM visita v
@@ -582,8 +637,16 @@ app.post('/api/preconsulta', async (req, res) => {
     const {
         id_visita,
         presion_arterial,
+        temperatura,
         peso,
         talla,
+        sintomas,
+        hallazgos,
+        recetado,
+        tipo_visita,
+        es_consulta,
+        es_reconsulta,
+        motivo_mapeado,
         id_usuario_registro
     } = req.body;
 
@@ -603,7 +666,8 @@ app.post('/api/preconsulta', async (req, res) => {
         }
     }
 
-    const imc = peso && talla ? ((peso * 0.453592) / (talla * talla)).toFixed(2) : null;
+    // Peso capturado en libras: se pasa a kg dividiendo entre 2.2 y luego IMC = kg / m²
+    const imc = peso && talla ? ((parseFloat(peso) / 2.2) / (talla * talla)).toFixed(2) : null;
 
     const sistolicaFuera = presion_sistolica ? (presion_sistolica > 140 || presion_sistolica < 90) : false;
     const diastolicaFuera = presion_diastolica ? (presion_diastolica > 90 || presion_diastolica < 60) : false;
@@ -627,21 +691,26 @@ app.post('/api/preconsulta', async (req, res) => {
         const { rows } = await pool.query(
             `INSERT INTO preconsulta (
                 id_visita, presion_sistolica, presion_diastolica,
-                frecuencia_cardiaca, temperatura, frecuencia_respiratoria, saturacion_oxigeno,
-                peso, talla, imc, alerta_signos, detalle_alerta, id_usuario_registro
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$4,$5,$6,$7,$8,$9)
+                temperatura, peso, talla, imc, alerta_signos, detalle_alerta,
+                sintomas, hallazgos, recetado, tipo_visita, es_consulta, es_reconsulta, motivo_mapeado,
+                id_usuario_registro
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
              ON CONFLICT (id_visita) DO UPDATE SET
                 presion_sistolica = EXCLUDED.presion_sistolica,
                 presion_diastolica = EXCLUDED.presion_diastolica,
-                frecuencia_cardiaca = EXCLUDED.frecuencia_cardiaca,
                 temperatura = EXCLUDED.temperatura,
-                frecuencia_respiratoria = EXCLUDED.frecuencia_respiratoria,
-                saturacion_oxigeno = EXCLUDED.saturacion_oxigeno,
                 peso = EXCLUDED.peso,
                 talla = EXCLUDED.talla,
                 imc = EXCLUDED.imc,
                 alerta_signos = EXCLUDED.alerta_signos,
                 detalle_alerta = EXCLUDED.detalle_alerta,
+                sintomas = EXCLUDED.sintomas,
+                hallazgos = EXCLUDED.hallazgos,
+                recetado = EXCLUDED.recetado,
+                tipo_visita = EXCLUDED.tipo_visita,
+                es_consulta = EXCLUDED.es_consulta,
+                es_reconsulta = EXCLUDED.es_reconsulta,
+                motivo_mapeado = EXCLUDED.motivo_mapeado,
                 id_usuario_registro = EXCLUDED.id_usuario_registro,
                 fecha_hora_registro = NOW()
              RETURNING *`,
@@ -649,6 +718,7 @@ app.post('/api/preconsulta', async (req, res) => {
                 id_visita,
                 presion_sistolica,
                 presion_diastolica,
+                temperatura || null,
                 peso || null,
                 talla || null,
                 imc,
@@ -658,8 +728,8 @@ app.post('/api/preconsulta', async (req, res) => {
                 hallazgos || null,
                 recetado || null,
                 tipoVisitaFinal,
-                esCons || false,
-                esRe || false,
+                esCons,
+                esRe,
                 motivo_mapeado || null,
                 id_usuario_registro
             ]
@@ -700,7 +770,7 @@ app.post('/api/consulta_medica', async (req, res) => {
         const { rows } = await client.query(
             `INSERT INTO consulta_medica (id_visita, diagnostico, indicaciones, observaciones, fecha_seguimiento, id_medico)
              VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (id_visita) DO UPDATE SET
+             ON CONFLICT (id_visita) WHERE tipo_version = 'original' DO UPDATE SET
                 diagnostico = EXCLUDED.diagnostico,
                 indicaciones = EXCLUDED.indicaciones,
                 observaciones = EXCLUDED.observaciones,
@@ -879,6 +949,37 @@ app.delete('/api/pacientes/enfermedades-cronicas/:id', async (req, res) => {
     }
 });
 
+// Motivos/morbilidades previos del paciente, para clasificar
+// automáticamente si la visita es Primera Consulta o Reconsulta.
+app.get('/api/pacientes/:id_paciente/motivos-previos', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT DISTINCT pr.motivo_mapeado AS motivo
+             FROM visita v
+             INNER JOIN preconsulta pr ON pr.id_visita = v.id_visita
+             WHERE v.id_paciente = $1
+               AND pr.motivo_mapeado IS NOT NULL
+               AND TRIM(pr.motivo_mapeado) <> ''
+               AND v.id_visita <> COALESCE($2::INT, -1)`,
+            [req.params.id_paciente, req.query.excluir || null]
+        );
+        const { rows: cronicas } = await pool.query(
+            `SELECT ec.nombre
+             FROM paciente_enfermedad_cronica pxc
+             INNER JOIN enfermedad_cronica ec ON pxc.id_enfermedad_cronica = ec.id_enfermedad_cronica
+             WHERE pxc.id_paciente = $1 AND pxc.activa = TRUE`,
+            [req.params.id_paciente]
+        );
+        res.json({
+            motivos: rows.map(r => r.motivo).filter(Boolean),
+            cronicas: cronicas.map(r => r.nombre),
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error obteniendo motivos previos' });
+    }
+});
+
 
 
 // ============================================================
@@ -909,24 +1010,26 @@ app.post('/api/factores-riesgo', async (req, res) => {
                 circ_abdominal, circ_abdominal_cm, circ_abdominal_fecha,
                 riesgo_ecv_elevado, riesgo_ecv_observacion, id_usuario_registro
              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-             ON CONFLICT DO NOTHING RETURNING *`,
+             ON CONFLICT (id_visita) DO UPDATE SET
+                sobrepeso = EXCLUDED.sobrepeso,
+                sobrepeso_imc = EXCLUDED.sobrepeso_imc,
+                obesidad = EXCLUDED.obesidad,
+                obesidad_imc = EXCLUDED.obesidad_imc,
+                circ_abdominal = EXCLUDED.circ_abdominal,
+                circ_abdominal_cm = EXCLUDED.circ_abdominal_cm,
+                circ_abdominal_fecha = EXCLUDED.circ_abdominal_fecha,
+                riesgo_ecv_elevado = EXCLUDED.riesgo_ecv_elevado,
+                riesgo_ecv_observacion = EXCLUDED.riesgo_ecv_observacion,
+                id_usuario_registro = EXCLUDED.id_usuario_registro,
+                fecha_registro = NOW()
+             RETURNING *`,
             [
                 id_visita, sobrepeso||false, sobrepeso_imc||null, obesidad||false, obesidad_imc||null,
                 circ_abdominal||false, circ_abdominal_cm||null, circ_abdominal_fecha||null,
-                riesgo_ecv_elevado||false, riesgo_ecv_observacion||null, sintomas || null,
-                hallazgos || null,
-                recetado || null,
-                tipoVisitaFinal,
-                esCons || false,
-                esRe || false,
-                motivo_mapeado || null,
-                id_usuario_registro
+                riesgo_ecv_elevado||false, riesgo_ecv_observacion||null, id_usuario_registro
             ]
         );
-        if (rows.length === 0) {
-            const { rows: ex } = await pool.query('SELECT * FROM factor_riesgo WHERE id_visita = $1', [id_visita]);
-            res.json(ex[0]);
-        } else res.status(201).json(rows[0]);
+        res.status(201).json(rows[0]);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error guardando factores de riesgo' });
@@ -1050,7 +1153,9 @@ app.get('/api/consulta_medica/:id_visita', async (req, res) => {
             `SELECT cm.*, u.nombre_completo AS nombre_medico
              FROM consulta_medica cm
              LEFT JOIN usuario u ON cm.id_medico = u.id_usuario
-             WHERE cm.id_visita = $1`,
+             WHERE cm.id_visita = $1
+             ORDER BY cm.version DESC, cm.id_consulta DESC
+             LIMIT 1`,
             [req.params.id_visita]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'Consulta no encontrada' });
@@ -1815,13 +1920,8 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// Las migraciones corren antes de aceptar peticiones: si la base no está
-// sincronizada, el health check y los endpoints fallarían de forma confusa.
-aplicarMigraciones().then(seedCatalogoEnfermedades).finally(() => {
-    app.listen(PORT, () => {
-        console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
-    });
-});
+// El arranque del servidor (esquema + migraciones + semillas) está al final
+// del archivo, después de registrar todas las rutas.
 
 // IMC de embarazadas (clasificación por IMC pregestacional OMS)
 app.get('/api/estadisticas/embarazadas/imc', async (req, res) => {
@@ -1856,3 +1956,21 @@ app.get('/api/estadisticas/embarazadas/imc', async (req, res) => {
         res.status(500).json({ error: 'Error obteniendo estadísticas IMC embarazadas' });
     }
 });
+
+// ============================================================
+// ARRANQUE
+// Asegura el esquema, las migraciones y las semillas ANTES de aceptar
+// peticiones: si la base (p. ej. Neon) está vacía o desactualizada, se
+// crea/actualiza automáticamente y ninguna consulta falla.
+// ============================================================
+aplicarSchema()
+    .then(aplicarMigraciones)
+    .then(seedCatalogoEnfermedades)
+    .catch((error) => {
+        console.error('❌ Falló la preparación de la base de datos:', error.message);
+    })
+    .finally(() => {
+        app.listen(PORT, () => {
+            console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
+        });
+    });
