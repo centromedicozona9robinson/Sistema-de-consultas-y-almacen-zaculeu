@@ -14,6 +14,10 @@ export const COLORS = {
   softRed: [253, 235, 235],
   red: [176, 42, 55],
   white: [255, 255, 255],
+  negro: [20, 20, 20],
+  HUEHUE_VERDE: [21, 101, 52],
+  HUEHUE_AMARILLO: [235, 176, 0],
+  HUEHUE_ROJO: [196, 43, 43],
 };
 
 let logoDataUrl = null;
@@ -99,10 +103,73 @@ export class PdfBuilder {
     }
   }
 
+  _banderaHuehue(y = 0, h = 4) {
+    const d = this.doc;
+    const w = this.pageW;
+    const sep = 0.6;
+    const verdeW = w * 0.45;
+    const amarW = w * 0.40;
+    d.setFillColor(...COLORS.HUEHUE_VERDE);
+    d.rect(0, y, verdeW - sep / 2, h, "F");
+    d.setFillColor(...COLORS.HUEHUE_AMARILLO);
+    d.rect(verdeW + sep / 2, y, amarW - sep, h, "F");
+    d.setFillColor(...COLORS.HUEHUE_ROJO);
+    d.rect(verdeW + amarW + sep / 2, y, w - verdeW - amarW - sep / 2, h, "F");
+  }
+
+  _banderaMini(x, y, ancho, alto) {
+    const d = this.doc;
+    const seg = ancho / 3;
+    d.setFillColor(...COLORS.HUEHUE_VERDE);
+    d.rect(x, y, seg, alto, "F");
+    d.setFillColor(...COLORS.HUEHUE_AMARILLO);
+    d.rect(x + seg, y, seg, alto, "F");
+    d.setFillColor(...COLORS.HUEHUE_ROJO);
+    d.rect(x + seg * 2, y, seg, alto, "F");
+    d.setDrawColor(...COLORS.negro);
+    d.setLineWidth(0.2);
+    d.rect(x, y, seg, alto, "S");
+    d.rect(x + seg, y, seg, h0(), "S");
+    d.rect(x + seg * 2, y, seg, h, "S");
+  }
+
+  _generadoRow() {
+    const d = this.doc;
+    const yy = this.y + 1.3;
+    d.setFont("helvetica", "bold");
+    d.setFontSize(7.4);
+    const label = "Generado:";
+    const labelW = d.getTextWidth(label);
+    d.setFont("helvetica", "normal");
+    const fechaTxt = ` ${this.generatedAt}`;
+    const fechaW = d.getTextWidth(fechaTxt);
+    const flagW = 6.2;
+    const flagH = 3.4;
+    const gap = 2.4;
+    const total = flagW + gap + labelW + fechaW;
+    const x0 = this.pageW - this.M - total;
+
+    d.setFillColor(...COLORS.HUEHUE_VERDE);
+    d.rect(x0, yy, flagW / 3 - 0.2, flagH, "F");
+    d.setFillColor(...COLORS.HUEHUE_AMARILLO);
+    d.rect(x0 + flagW / 3, yy, flagW / 3 - 0.2, flagH, "F");
+    d.setFillColor(...COLORS.HUEHUE_ROJO);
+    d.rect(x0 + (flagW / 3) * 2, yy, flagW / 3, flagH, "F");
+    d.setDrawColor(...COLORS.negro);
+    d.setLineWidth(0.2);
+    d.rect(x0, yy, flagW, flagH, "S");
+
+    d.setFont("helvetica", "bold");
+    d.setTextColor(...COLORS.HUEHUE_VERDE);
+    d.text(label, x0 + flagW + gap, yy + 2.7);
+    d.setFont("helvetica", "normal");
+    d.setTextColor(...COLORS.body);
+    d.text(fechaTxt, x0 + flagW + gap + labelW, yy + 2.7);
+  }
+
   _encabezadoCompacto() {
     const d = this.doc;
-    d.setFillColor(...COLORS.primary);
-    d.rect(0, 0, this.pageW, 3, "F");
+    this._banderaHuehue(0, 3);
     d.setFont("helvetica", "bold");
     d.setFontSize(8.5);
     d.setTextColor(...COLORS.primaryDark);
@@ -119,31 +186,31 @@ export class PdfBuilder {
   header(title, subtitle) {
     const d = this.doc;
     this.docTitle = title || "";
-    const wide = this.innerW > 120;
+    const grande = this.innerW > 150;
 
-    d.setFillColor(...COLORS.primary);
-    d.rect(0, 0, this.pageW, 4, "F");
+    this._banderaHuehue(0, 4);
 
-    const logoH = wide ? 13 : 11;
+    const logoH = grande ? 13 : 11;
     const logoW = logoH * logoRatio;
     if (this.logo) d.addImage(this.logo, "PNG", this.M, 7, logoW, logoH);
 
     const tx = this.M + (this.logo ? logoW + 4 : 0);
     d.setFont("helvetica", "bold");
-    d.setFontSize(wide ? 13 : 11);
+    d.setFontSize(grande ? 13 : 10.5);
     d.setTextColor(...COLORS.primaryDark);
     d.text("Centro Médico Público de Zaculeu", tx, 12.5);
     d.setFont("helvetica", "normal");
     d.setFontSize(7.8);
     d.setTextColor(...COLORS.gray);
     d.text("Consulta externa · Huehuetenango, Guatemala", tx, 17);
-    d.text(`Generado: ${this.generatedAt}`, this.pageW - this.M, 9.5, { align: "right" });
 
     this.y = 24;
     d.setFillColor(...COLORS.softBlue);
     d.roundedRect(this.M, this.y, this.innerW, 13, 1.5, 1.5, "F");
+    d.setFillColor(...COLORS.HUEHUE_VERDE);
+    d.rect(this.M, this.y, 2, 13, "F");
     d.setFont("helvetica", "bold");
-    d.setFontSize(wide ? 12 : 10.5);
+    d.setFontSize(grande ? 12 : 10.5);
     d.setTextColor(...COLORS.primaryDark);
     d.text(title, this.pageW / 2, this.y + 6, { align: "center" });
     if (subtitle) {
@@ -152,7 +219,10 @@ export class PdfBuilder {
       d.setTextColor(...COLORS.body);
       d.text(subtitle, this.pageW / 2, this.y + 10.5, { align: "center" });
     }
-    this.y += 18;
+    this.y += 13;
+
+    this._generadoRow();
+    this.y += 10;
   }
 
   sectionTitle(text) {
