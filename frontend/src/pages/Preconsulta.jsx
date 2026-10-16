@@ -364,6 +364,21 @@ function clasificarEdad(fechaNac, fechaRef) {
         } catch (e) { console.error(e); }
       }
 
+      // Registro de embarazo en el expediente clínico (se guarda con la preconsulta).
+      if (paciente?.id_paciente && estaEmbarazada) {
+        try {
+          await api.actualizarPaciente(paciente.id_paciente, {
+            esta_embarazada: true,
+            imc_pregestacional: imcPreg || null,
+            peso_habitual_kg: pesoHabitual || null,
+            fur: fur || null,
+            fpp: fpp || null,
+            semana_gestacion: semanaGest || null,
+            usuario_registro_embarazo: user.id,
+          });
+        } catch (e) { console.error(e); }
+      }
+
       // Factores de riesgo y tamizajes: se calculan/guardan automáticamente.
       try {
         const p = parseFloat(form.peso);
@@ -590,20 +605,24 @@ function clasificarEdad(fechaNac, fechaRef) {
                       <input type="number" value={semanaGest} onChange={(e)=>setSemanaGest(e.target.value)} className="w-full border border-[#c2c6d4] rounded px-2 py-1" />
                     </div>
                   </div>
-                  <div>
+                  <div className="flex flex-wrap items-center gap-3">
                     <button type="button" onClick={async()=>{
                       try{
                         await api.actualizarPaciente(paciente.id_paciente,{esta_embarazada:true,imc_pregestacional:imcPreg||null,peso_habitual_kg:pesoHabitual||null,fur:fur||null,fpp:fpp||null,semana_gestacion:semanaGest||null,usuario_registro_embarazo:user.id});
-                        alert('Datos de embarazo guardados');
-                      }catch(e){alert(e.message)}
+                        setPaciente((p)=>({...p,esta_embarazada:true,imc_pregestacional:imcPreg||null,peso_habitual_kg:pesoHabitual||null,fur:fur||null,fpp:fpp||null,semana_gestacion:semanaGest||null}));
+                        setFeedback({type:'ok',msg:'Datos de embarazo guardados'});
+                      }catch(e){setFeedback({type:'err',msg:e.message})}
                     }} className="text-xs bg-[#006a71] text-white px-2 py-1 rounded">Guardar datos embarazo</button>
                     <button type="button" onClick={async()=>{
                       if(!confirm('Marcar parto finalizado?')) return;
                       try{
-                        await api.actualizarPaciente(paciente.id_paciente,{embarazo_finalizado:true,esta_embarazada:false,fecha_embarazo_finalizado:new Date().toISOString(),usuario_embarazo_finalizado:user.id,motivo_embarazo_finalizado:'Parto finalizado'});
-                        alert('Parto finalizado');
-                      }catch(e){alert(e.message)}
-                    }} className="text-xs ml-2 bg-[#ba1a1a] text-white px-2 py-1 rounded">Parto finalizado</button>
+                        await api.actualizarPaciente(paciente.id_paciente,{esta_embarazada:false,embarazo_finalizado:true,fecha_embarazo_finalizado:new Date().toISOString(),usuario_embarazo_finalizado:user.id,motivo_embarazo_finalizado:'Parto'});
+                        setEstaEmbarazada(false);
+                        setPaciente((p)=>({...p,esta_embarazada:false,embarazo_finalizado:true}));
+                        setFeedback({type:'ok',msg:'Embarazo marcado como finalizado'});
+                      }catch(e){setFeedback({type:'err',msg:e.message})}
+                    }} className="text-xs bg-[#ad1457] text-white px-2 py-1 rounded">Parto finalizado</button>
+                    <span className="text-xs text-[#424752]">También se guarda automáticamente al guardar la preconsulta.</span>
                   </div>
                 </>
               )}

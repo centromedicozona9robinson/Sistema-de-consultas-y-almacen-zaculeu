@@ -599,6 +599,45 @@ export default function ExpedientesClinicos() {
             />
           </div>
 
+          {(paciente.esta_embarazada || paciente.embarazo_finalizado || paciente.fur || paciente.fpp || paciente.imc_pregestacional != null) && (
+            <div className="bg-white border border-[#c2c6d4] border-l-4 border-l-[#ad1457] rounded-lg p-6 mb-5">
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <span className="text-2xl">🤰</span>
+                <div className="font-bold text-lg">Embarazo</div>
+                {paciente.esta_embarazada && (
+                  <span className="bg-[#fce4ec] text-[#ad1457] text-xs font-semibold px-3 py-1 rounded-full">En curso</span>
+                )}
+                {!paciente.esta_embarazada && paciente.embarazo_finalizado && (
+                  <span className="bg-[#eceef0] text-[#424752] text-xs font-semibold px-3 py-1 rounded-full">Finalizado</span>
+                )}
+                {paciente.fecha_registro_embarazo && (
+                  <span className="text-xs text-[#424752] ml-auto">Registrado: {new Date(paciente.fecha_registro_embarazo).toLocaleDateString("es-GT")}</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[
+                  ["FUM (última regla)", paciente.fur ? new Date(paciente.fur).toLocaleDateString("es-GT") : "—"],
+                  ["FPP (probable parto)", paciente.fpp ? new Date(paciente.fpp).toLocaleDateString("es-GT") : "—"],
+                  ["Semanas de gestación", paciente.semana_gestacion != null ? `${paciente.semana_gestacion} semanas` : "—"],
+                  ["IMC pregestacional", paciente.imc_pregestacional != null ? paciente.imc_pregestacional : "—"],
+                  ["Peso habitual", paciente.peso_habitual_kg != null ? `${paciente.peso_habitual_kg} kg` : "—"],
+                  ["Estado", paciente.esta_embarazada ? "Embarazada" : (paciente.embarazo_finalizado ? "Finalizado" : "—")],
+                ].map(([label, val]) => (
+                  <div key={label}>
+                    <div className="text-[11px] tracking-wide text-[#424752]">{label}</div>
+                    <div className="font-bold mt-0.5">{val}</div>
+                  </div>
+                ))}
+              </div>
+              {paciente.embarazo_finalizado && paciente.fecha_embarazo_finalizado && (
+                <div className="mt-4 pt-3 border-t border-[#eceef0] text-sm text-[#424752]">
+                  Finalizado el {new Date(paciente.fecha_embarazo_finalizado).toLocaleDateString("es-GT")}
+                  {paciente.motivo_embarazo_finalizado ? ` · ${paciente.motivo_embarazo_finalizado}` : ""}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="bg-white border border-[#c2c6d4] rounded-lg p-7">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
               <div className="flex items-center gap-2.5 font-bold text-xl">
