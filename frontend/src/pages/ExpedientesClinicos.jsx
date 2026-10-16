@@ -178,7 +178,7 @@ export default function ExpedientesClinicos() {
           v.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${v.frecuencia_cardiaca} lpm` } : null,
           v.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${v.frecuencia_respiratoria} rpm` } : null,
           v.temperatura ? { label: "Temperatura", value: `${v.temperatura} °C` } : null,
-          v.saturacion_oxigeno ? { label: "Saturación O₂", value: `${v.saturacion_oxigeno} %` } : null,
+          v.saturacion_oxigeno ? { label: "Saturación O2", value: `${v.saturacion_oxigeno} %` } : null,
           v.peso ? { label: "Peso", value: `${v.peso} lb` } : null,
           v.talla ? { label: "Talla", value: `${v.talla} m` } : null,
           v.imc ? { label: "IMC", value: `${v.imc}` } : null,
@@ -211,24 +211,20 @@ export default function ExpedientesClinicos() {
     pdf.header("Nota de Visita", `Atendido el ${new Date(v.fecha_visita).toLocaleString("es-GT")}`);
 
     pdf.sectionTitle("Paciente");
-    pdf.infoGrid([
-      { label: "Nombre", value: paciente.nombre_completo },
-      { label: "DPI", value: paciente.dpi || "—" },
-      { label: "Edad", value: `${paciente.edad || "—"} años` },
-      { label: "Sexo", value: paciente.sexo === "M" ? "Masculino" : "Femenino" },
-    ], 2);
+    pdf.keyValue("Nombre", paciente.nombre_completo);
+    pdf.keyValue("DPI · Edad · Sexo", `${paciente.dpi || "—"} · ${paciente.edad || "—"} años · ${paciente.sexo === "M" ? "Masculino" : "Femenino"}`);
 
     const vitales = [
-      v.presion_sistolica ? { label: "Presión arterial", value: `${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` } : null,
-      v.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${v.frecuencia_cardiaca} lpm` } : null,
-      v.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${v.frecuencia_respiratoria} rpm` } : null,
-      v.temperatura ? { label: "Temperatura", value: `${v.temperatura} °C` } : null,
-      v.saturacion_oxigeno ? { label: "Saturación O₂", value: `${v.saturacion_oxigeno} %` } : null,
-      v.peso ? { label: "Peso", value: `${v.peso} lb` } : null,
-      v.talla ? { label: "Talla", value: `${v.talla} m` } : null,
-      v.imc ? { label: "IMC", value: `${v.imc}` } : null,
-    ].filter(Boolean);
-    if (vitales.length) { pdf.sectionTitle("Signos vitales"); pdf.infoGrid(vitales, 2); }
+      v.presion_sistolica ? `PA ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
+      v.frecuencia_cardiaca ? `FC ${v.frecuencia_cardiaca} lpm` : "",
+      v.frecuencia_respiratoria ? `FR ${v.frecuencia_respiratoria} rpm` : "",
+      v.temperatura ? `T ${v.temperatura} °C` : "",
+      v.saturacion_oxigeno ? `SpO2 ${v.saturacion_oxigeno}%` : "",
+      v.peso ? `Peso ${v.peso} lb` : "",
+      v.talla ? `Talla ${v.talla} m` : "",
+      v.imc ? `IMC ${v.imc}` : "",
+    ].filter(Boolean).join("  ·  ");
+    if (vitales) pdf.keyValue("Signos vitales", vitales);
     if (v.alerta_signos) pdf.callout(`Alerta de signos vitales${v.detalle_alerta ? `: ${v.detalle_alerta}` : ""}`, "danger");
 
     pdf.sectionTitle("Consulta");
@@ -242,8 +238,8 @@ export default function ExpedientesClinicos() {
     if (v.recetas && v.recetas.length) pdf.keyValue("Medicamentos", v.recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
     pdf.keyValue("Observaciones", v.observaciones);
     pdf.keyValue("Próxima cita", v.fecha_seguimiento ? fechaCorta(v.fecha_seguimiento) : "");
+    pdf.keyValue("Atendido por", v.nombre_medico);
 
-    pdf.firma(v.nombre_medico, "Médico tratante");
     pdf.save(`nota_${nombreArchivo(paciente.nombre_completo)}_${new Date(v.fecha_visita).toISOString().slice(0, 10)}.pdf`);
   };
 

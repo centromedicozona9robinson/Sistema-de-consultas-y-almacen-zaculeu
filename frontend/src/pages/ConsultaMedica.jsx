@@ -173,25 +173,21 @@ const fetchData = async () => {
     pdf.header("Nota de Consulta", `Atendido el ${fechaCorta(visita?.fecha_visita || new Date())}  ·  Versión ${versionActual}`);
 
     pdf.sectionTitle("Paciente");
-    pdf.infoGrid([
-      { label: "Nombre", value: paciente?.nombre_completo },
-      { label: "DPI", value: paciente?.dpi || "—" },
-      { label: "Edad", value: `${paciente?.edad || "—"} años` },
-      { label: "Sexo", value: paciente?.sexo === "M" ? "Masculino" : "Femenino" },
-    ], 2);
+    pdf.keyValue("Nombre", paciente?.nombre_completo);
+    pdf.keyValue("DPI · Edad · Sexo", `${paciente?.dpi || "—"} · ${paciente?.edad || "—"} años · ${paciente?.sexo === "M" ? "Masculino" : "Femenino"}`);
 
     const pre = preconsulta || {};
     const vitales = [
-      pre.presion_sistolica ? { label: "Presión arterial", value: `${pre.presion_sistolica}/${pre.presion_diastolica || "—"} mmHg` } : null,
-      pre.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${pre.frecuencia_cardiaca} lpm` } : null,
-      pre.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${pre.frecuencia_respiratoria} rpm` } : null,
-      pre.temperatura ? { label: "Temperatura", value: `${pre.temperatura} °C` } : null,
-      pre.saturacion_oxigeno ? { label: "Saturación O₂", value: `${pre.saturacion_oxigeno} %` } : null,
-      pre.peso ? { label: "Peso", value: `${pre.peso} lb` } : null,
-      pre.talla ? { label: "Talla", value: `${pre.talla} m` } : null,
-      pre.imc ? { label: "IMC", value: `${pre.imc}` } : null,
-    ].filter(Boolean);
-    if (vitales.length) { pdf.sectionTitle("Signos vitales"); pdf.infoGrid(vitales, 2); }
+      pre.presion_sistolica ? `PA ${pre.presion_sistolica}/${pre.presion_diastolica || "—"} mmHg` : "",
+      pre.frecuencia_cardiaca ? `FC ${pre.frecuencia_cardiaca} lpm` : "",
+      pre.frecuencia_respiratoria ? `FR ${pre.frecuencia_respiratoria} rpm` : "",
+      pre.temperatura ? `T ${pre.temperatura} °C` : "",
+      pre.saturacion_oxigeno ? `SpO2 ${pre.saturacion_oxigeno}%` : "",
+      pre.peso ? `Peso ${pre.peso} lb` : "",
+      pre.talla ? `Talla ${pre.talla} m` : "",
+      pre.imc ? `IMC ${pre.imc}` : "",
+    ].filter(Boolean).join("  ·  ");
+    if (vitales) pdf.keyValue("Signos vitales", vitales);
 
     pdf.sectionTitle("Consulta");
     pdf.keyValue("Motivo / morbilidad", visita?.motivo_mapeado || visita?.motivo_consulta || pre.motivo_mapeado || "Consulta general");
@@ -201,8 +197,8 @@ const fetchData = async () => {
     if (recetas.length) pdf.keyValue("Medicamentos dispensados", recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
     pdf.keyValue("Observaciones", form.observaciones);
     pdf.keyValue("Próxima cita", form.fecha_seguimiento ? fechaCorta(form.fecha_seguimiento) : "");
+    pdf.keyValue("Atendido por", user?.nombre);
 
-    pdf.firma(user?.nombre || "Médico tratante", "Médico tratante");
     pdf.save(`nota_consulta_${nombreArchivo(paciente?.nombre_completo || paciente?.dpi || "paciente")}.pdf`);
   };
 
