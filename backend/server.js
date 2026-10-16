@@ -174,8 +174,29 @@ async function seedCatalogoEnfermedades() {
 }
 
 // ============================================================
-// AUTH
+// FINALIZACIÓN AUTOMÁTICA DE EMBARAZOS
+// Al cumplirse los 9 meses (40 semanas) el embarazo se marca como
+// finalizado automáticamente, dejando la marca de que estuvo embarazada.
+// Se calcula con la FPP; si no existe, con la FUR + 280 días; si tampoco,
+// con la fecha de registro + 9 meses.
 // ============================================================
+async function autoFinalizarEmbarazos() {
+    try {
+        const { rowCount } = await pool.query(`
+            UPDATE paciente
+               SET esta_embarazada = FALSE,
+                   embarazo_finalizado = TRUE,
+                   fecha_embarazo_finalizado = COALESCE(fpp::timestamp, fur + INTERVAL '280 days', fecha_registro_embarazo + INTERVAL '9 months'),
+                   motivo_embarazo_finalizado = COALESCE(motivo_embarazo_finalizado, 'Cumplió 9 meses de embarazo (automático)')
+             WHERE esta_embarazada = TRUE
+               AND COALESCE(fpp::timestamp, fur + INTERVAL '280 days', fecha_registro_embarazo + INTERVAL '9 months') <= NOW()
+        `);
+        if (rowCount > 0) console.log(`🤰 Embarazos finalizados automáticamente: ${rowCount}`);
+    } catch (e) {
+        console.error('autoFinalizarEmbarazos:', e.message);
+    }
+}
+
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -400,6 +421,7 @@ app.delete('/api/patients/:id', async (req, res) => {
 app.get('/api/expediente/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        await autoFinalizarEmbarazos();
         const { rows: pRows } = await pool.query(
             `SELECT *, DATE_PART('year', AGE(fecha_nacimiento))::INT AS edad
              FROM paciente WHERE id_paciente = $1`, [id]
@@ -1927,6 +1949,7 @@ app.get('/health', (req, res) => {
 app.get('/api/estadisticas/embarazadas/imc', async (req, res) => {
     const { desde, hasta } = parseRango(req);
     try {
+        await autoFinalizarEmbarazos();
         const { rows } = await pool.query(
             `SELECT
                COUNT(*) FILTER (WHERE imc_pregestacional < 18.5)::INT AS bajo_peso,
@@ -1966,6 +1989,7 @@ app.get('/api/estadisticas/embarazadas/imc', async (req, res) => {
 aplicarSchema()
     .then(aplicarMigraciones)
     .then(seedCatalogoEnfermedades)
+    .then(autoFinalizarEmbarazos)
     .catch((error) => {
         console.error('❌ Falló la preparación de la base de datos:', error.message);
     })
@@ -1973,4 +1997,6 @@ aplicarSchema()
         app.listen(PORT, () => {
             console.log(`✅ Backend server (PostgreSQL) running on port ${PORT}`);
         });
+        // Revisa cada hora si algún embarazo cumplió los 9 meses.
+        setInterval(autoFinalizarEmbarazos, 60 * 60 * 1000);
     });
