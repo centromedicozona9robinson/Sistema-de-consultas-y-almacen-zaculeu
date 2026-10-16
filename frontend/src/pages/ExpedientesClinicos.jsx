@@ -191,7 +191,7 @@ export default function ExpedientesClinicos() {
         pdf.keyValue("Indicaciones", v.indicaciones);
         const fdr = factoresLegibles(v);
         if (fdr.length) pdf.keyValue("Factores de riesgo", fdr.join(", "));
-        pdf.keyValue("Síntomas", v.sintomas);
+        pdf.keyValue("Refiere el paciente", v.sintomas);
         pdf.keyValue("Recetado / manejo", v.recetado);
         if (v.recetas && v.recetas.length) pdf.keyValue("Medicamentos dispensados", v.recetas.map((r) => `${r.nombre} (${r.cantidad})`).join(", "));
         pdf.keyValue("Observaciones", v.observaciones);
@@ -230,9 +230,9 @@ export default function ExpedientesClinicos() {
     pdf.sectionTitle("Consulta");
     pdf.keyValue("Motivo / morbilidad", v.motivo_mapeado || v.motivo_consulta || "Consulta general");
     pdf.keyValue("Tipo de visita", tipoVisitaLegible(v.tipo_visita));
+    pdf.keyValue("Refiere el paciente", v.sintomas);
     const fdr = factoresLegibles(v);
     if (fdr.length) pdf.keyValue("Factores de riesgo", fdr.join(", "));
-    pdf.keyValue("Síntomas", v.sintomas);
     pdf.keyValue("Diagnóstico", v.diagnostico);
     pdf.keyValue("Indicaciones / tratamiento", v.indicaciones);
     if (v.recetas && v.recetas.length) pdf.keyValue("Medicamentos", v.recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
@@ -522,7 +522,7 @@ export default function ExpedientesClinicos() {
                         </div>
                         <div>
                           <div className="flex items-center gap-3">
-                            <div className="font-bold text-[17px]">{v.motivo_consulta || "Consulta general"}</div>
+                            <div className="font-bold text-[17px]">{v.motivo_mapeado || v.motivo_consulta || "Consulta general"}</div>
                             <span className={`text-xs font-semibold px-3 py-1 rounded whitespace-nowrap ${statusStyles[v.estado] || "bg-[#eceef0] text-[#424752]"}`}>
                               {statusLabel[v.estado] || v.estado}
                             </span>
@@ -590,6 +590,12 @@ export default function ExpedientesClinicos() {
                                 <div className="mt-3 p-2 bg-[#fef2f2] border border-[#fecaca] rounded text-sm text-[#991b1b]">
                                   <AlertTriangle size={14} className="inline-block mr-1" />
                                   <strong>Alerta:</strong> {v.detalle_alerta}
+                                </div>
+                              )}
+                              {v.sintomas && (
+                                <div className="mt-3 pt-3 border-t border-[#bbf7d0]">
+                                  <div className="text-[11px] tracking-wide text-[#006a71] mb-1">REFIERE EL PACIENTE</div>
+                                  <p className="text-sm font-medium">{v.sintomas}</p>
                                 </div>
                               )}
                             </div>

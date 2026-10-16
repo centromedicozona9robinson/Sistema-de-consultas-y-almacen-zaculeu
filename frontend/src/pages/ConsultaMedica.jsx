@@ -192,6 +192,7 @@ const fetchData = async () => {
     pdf.sectionTitle("Consulta");
     pdf.keyValue("Motivo / morbilidad", visita?.motivo_mapeado || visita?.motivo_consulta || pre.motivo_mapeado || "Consulta general");
     pdf.keyValue("Tipo de visita", tipoVisitaLegible(visita?.tipo_visita));
+    if (pre.sintomas) pdf.keyValue("Refiere el paciente", pre.sintomas);
     pdf.keyValue("Diagnóstico", form.diagnostico);
     pdf.keyValue("Indicaciones / tratamiento", form.indicaciones);
     if (recetas.length) pdf.keyValue("Medicamentos dispensados", recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
@@ -301,6 +302,17 @@ const fetchData = async () => {
                 <VitalCard label="Altura" value={preconsulta.talla || "—"} unit="m" icon={HeartPulse} color="text-[#d69e2e]" />
                 <VitalCard label="IMC" value={preconsulta.imc || "—"} unit="" icon={HeartPulse} color="text-[#276749]" />
               </div>
+              {(preconsulta.motivo_mapeado || preconsulta.sintomas) && (
+                <div className="mt-4 p-3 bg-[#e6f2f3] border-l-4 border-[#006a71] rounded-r">
+                  <div className="text-[11px] tracking-wide text-[#006a71] font-semibold mb-1">REFIERE EL PACIENTE</div>
+                  {preconsulta.motivo_mapeado && (
+                    <p className="text-sm"><strong>Motivo:</strong> {preconsulta.motivo_mapeado}</p>
+                  )}
+                  {preconsulta.sintomas && (
+                    <p className="text-sm"><strong>Síntomas:</strong> {preconsulta.sintomas}</p>
+                  )}
+                </div>
+              )}
               {preconsulta.alerta_signos && (
                 <div className="mt-4 p-3 bg-[#fff5f5] border-l-4 border-[#ba1a1a] rounded-r">
                   <div className="flex items-center gap-2 text-[#ba1a1a] font-semibold mb-1">

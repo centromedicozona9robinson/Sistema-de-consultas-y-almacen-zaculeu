@@ -278,7 +278,9 @@ app.get('/api/visitas/hoy', async (req, res) => {
               p.sexo,
               CONCAT(pr.presion_sistolica, '/', pr.presion_diastolica) AS presion,
               pr.peso,
-              pr.temperatura
+              pr.temperatura,
+              pr.motivo_mapeado,
+              pr.sintomas
             FROM visita v
             INNER JOIN paciente p ON v.id_paciente = p.id_paciente
             LEFT JOIN preconsulta pr ON v.id_visita = pr.id_visita

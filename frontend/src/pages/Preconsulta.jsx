@@ -461,6 +461,15 @@ function clasificarEdad(fechaNac, fechaRef) {
                   <div className="text-xs text-[#424752] mt-0.5">
                     DPI: {v.dpi || "—"} · Edad: {v.edad ?? "—"} años · {new Date(v.fecha_visita).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
                   </div>
+                  {(v.motivo_mapeado || v.motivo_consulta || v.sintomas) && (
+                    <div className="text-xs mt-1.5 bg-[#e6f2f3] border border-[#9ed0d3] text-[#004d56] rounded px-2 py-1">
+                      {(v.motivo_mapeado || v.motivo_consulta) && (
+                        <span><strong className="font-semibold">Motivo:</strong> {v.motivo_mapeado || v.motivo_consulta}</span>
+                      )}
+                      {(v.motivo_mapeado || v.motivo_consulta) && v.sintomas && <span className="mx-1">·</span>}
+                      {v.sintomas && <span><strong className="font-semibold">Refiere:</strong> {v.sintomas}</span>}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => navigate(`/preconsulta?id_visita=${v.id_visita}`)}
