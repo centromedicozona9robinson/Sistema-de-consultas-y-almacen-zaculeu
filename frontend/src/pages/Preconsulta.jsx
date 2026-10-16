@@ -136,6 +136,7 @@ const fetchData = async () => {
           if (pre.sintomas !== undefined) formInit.sintomas = pre.sintomas;
           if (pre.hallazgos !== undefined) formInit.hallazgos = pre.hallazgos;
           if (pre.recetado !== undefined) formInit.recetado = pre.recetado;
+          formInit.alergias = pre.alergias || '';
           setForm(formInit);
           setImc(computeImc(formInit));
           setAlertas(getAlertas(formInit));
@@ -145,7 +146,7 @@ const fetchData = async () => {
       if (id_paciente) {
         const exp = await api.getExpediente(id_paciente);
         setPaciente(exp.paciente);
-        cargarDatosCronicos(exp.paciente);
+        setForm(f => ({ ...f, alergias: f.alergias || exp.paciente.alergias || '' }));
         if (exp.paciente.esta_embarazada) setEstaEmbarazada(true);
         if (exp.paciente.imc_pregestacional) setImcPreg(exp.paciente.imc_pregestacional);
         if (exp.paciente.peso_habitual_kg) setPesoHabitual(exp.paciente.peso_habitual_kg);
@@ -361,6 +362,13 @@ function clasificarEdad(fechaNac, fechaRef) {
               await api.eliminarEnfermedadCronicaPaciente(ex.id_paciente_enfermedad_cronica);
             }
           }
+        } catch (e) { console.error(e); }
+      }
+
+      // Alergias del paciente (se guardan en el expediente).
+      if (paciente?.id_paciente) {
+        try {
+          await api.actualizarPaciente(paciente.id_paciente, { alergias: (form.alergias || '').trim() });
         } catch (e) { console.error(e); }
       }
 
@@ -667,9 +675,15 @@ function clasificarEdad(fechaNac, fechaRef) {
               <textarea name="sintomas" value={form.sintomas||''} onChange={handleChange} rows={2} className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" placeholder="Síntomas que refiere el paciente..." />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold mb-1.5">Recetado y Manejo</label>
-              <textarea name="recetado" value={form.recetado||''} onChange={handleChange} rows={2} className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" placeholder="Lo que se le recetó/manejo..." />
+            <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 mb-4">
+              <label className="block text-sm font-semibold mb-1.5">Alergias</label>
+              <textarea
+                value={form.alergias || ""}
+                onChange={(e) => setForm((f) => ({ ...f, alergias: e.target.value }))}
+                rows={2}
+                className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20"
+                placeholder="Especificar alergias separadas por coma (ej. Penicilina, Sulfas)"
+              />
             </div>
 
 
