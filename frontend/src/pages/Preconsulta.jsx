@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, CheckCircle2, AlertCircle, HeartPulse, Weight, Ruler, Calculator, Flag, AlertTriangle } from "lucide-react";
 import { api } from "../services/api";
@@ -11,6 +11,19 @@ const VITAL_RANGES = {
   peso: { label: "PESO", unit: "lb", icon: Weight, color: "#805ad5", step: 0.1, min: 2, max: 660 },
   talla: { label: "ALTURA", unit: "m", icon: Ruler, color: "#d69e2e", step: 0.01, min: 0.3, max: 2.5 },
 };
+
+// Grupos del catálogo que se muestran por su nombre base (sin el rango de edad;
+// el rango lo resuelve el sistema según la edad del paciente y se usa en
+// estadísticas). "Cáncer" pide además la localización.
+const GRUPOS_PRINCIPALES = [
+  "Diabetes Mellitus",
+  "Hipertensión Arterial",
+  "Insuficiencia Renal Crónica",
+  "Enfermedades Cardiovasculares",
+  "Cáncer",
+];
+const GRUPO_CANCER = "Cáncer";
+const GRUPO_CANCER_LOC = "Cáncer - Localización";
 
 export default function Preconsulta() {
   const navigate = useNavigate();
@@ -29,7 +42,9 @@ export default function Preconsulta() {
   const [preconsultaExistente, setPreconsultaExistente] = useState(null);
   const [cola, setCola] = useState(null);
   const [catalogoCronicos, setCatalogoCronicos] = useState([]);
-  const [cronicosSel, setCronicosSel] = useState([]);
+  const [seleccion, setSeleccion] = useState([]);
+  const [busqueda, setBusqueda] = useState("");
+  const [mostrarSug, setMostrarSug] = useState(false);
   const [estaEmbarazada, setEstaEmbarazada] = useState(false);
   const [imcPreg, setImcPreg] = useState('');
   const [pesoHabitual, setPesoHabitual] = useState('');
@@ -37,10 +52,8 @@ export default function Preconsulta() {
   const [fpp, setFpp] = useState('');
   const [semanaGest, setSemanaGest] = useState('');
   const [tipoVisita, setTipoVisita] = useState({ consulta:false, reconsulta:false });
-  const [motivo, setMotivo] = useState('');
   const [motivosPrevios, setMotivosPrevios] = useState([]);
   const [cronicasPaciente, setCronicasPaciente] = useState([]);
-  const [mostrarCronicos, setMostrarCronicos] = useState(false);
   const [factores, setFactores] = useState({ sobrepeso:false, obesidad:false, circ_abdominal:false, riesgo_ecv_elevado:false, circ_abdominal_cm:'', circ_abdominal_fecha:'', riesgo_ecv_observacion:'' });
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
@@ -62,7 +75,14 @@ export default function Preconsulta() {
     try {
       const cr = await api.getEnfermedadesCronicasPaciente(pac.id_paciente);
       setCronicasPaciente(cr);
-      setCronicosSel(cr.map(x => x.id_enfermedad_cronica));
+      setSeleccion(cr.map((x) => ({
+        id: x.id_enfermedad_cronica,
+        label: GRUPOS_PRINCIPALES.includes(x.grupo) ? x.grupo : x.nombre,
+        grupo: x.grupo,
+        requiere_localizacion: !!x.requiere_localizacion,
+        localizacion: x.localizacion || '',
+        guardadoId: x.id_paciente_enfermedad_cronica,
+      })));
     } catch (e) {}
     cargarMotivosPrevios(pac.id_paciente);
   };
@@ -116,7 +136,6 @@ const fetchData = async () => {
           if (pre.sintomas !== undefined) formInit.sintomas = pre.sintomas;
           if (pre.hallazgos !== undefined) formInit.hallazgos = pre.hallazgos;
           if (pre.recetado !== undefined) formInit.recetado = pre.recetado;
-          if (pre.motivo_mapeado) setMotivo(pre.motivo_mapeado);
           setForm(formInit);
           setImc(computeImc(formInit));
           setAlertas(getAlertas(formInit));
@@ -201,21 +220,78 @@ function clasificarEdad(fechaNac, fechaRef) {
 
   const normaliza = (s) => (s || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 
-  // Tipo de visita automático por morbilidad: si el motivo/enfermedad ya se
-  // registró antes → Reconsulta; si es nuevo → Primera Consulta; si hay de
-  // ambos → AMBAS.
+  const edadPaciente = useMemo(() => {
+    if (!paciente?.fecha_nacimiento) return null;
+    const ref = visita?.fecha_visita ? new Date(visita.fecha_visita) : new Date();
+    const nac = new Date(paciente.fecha_nacimiento);
+    let anos = ref.getFullYear() - nac.getFullYear();
+    const m = ref.getMonth() - nac.getMonth();
+    if (m < 0 || (m === 0 && ref.getDate() < nac.getDate())) anos--;
+    return anos >= 0 ? anos : null;
+  }, [paciente?.fecha_nacimiento, visita?.fecha_visita]);
+
+  // Opciones del buscador: enfermedades por grupo (sin rango de edad, ese lo
+  // resuelve el sistema y se usa en estadísticas) + localizaciones de cáncer.
+  const opciones = useMemo(() => {
+    const lista = [];
+    const porGrupo = {};
+    (catalogoCronicos || []).forEach((c) => { (porGrupo[c.grupo] ||= []).push(c); });
+    GRUPOS_PRINCIPALES.forEach((g) => {
+      const rows = porGrupo[g];
+      if (!rows || !rows.length) return;
+      const pick = rows.find((r) => edadPaciente === null || (r.edad_min <= edadPaciente && r.edad_max >= edadPaciente)) || rows[0];
+      lista.push({
+        key: `${g}-${pick.id_enfermedad_cronica}`,
+        id: pick.id_enfermedad_cronica,
+        label: g,
+        grupo: g,
+        requiere_localizacion: !!pick.requiere_localizacion,
+      });
+    });
+    (porGrupo[GRUPO_CANCER_LOC] || []).forEach((r) => {
+      lista.push({
+        key: `${r.grupo}-${r.id_enfermedad_cronica}`,
+        id: r.id_enfermedad_cronica,
+        label: r.nombre,
+        grupo: r.grupo,
+        requiere_localizacion: false,
+      });
+    });
+    return lista;
+  }, [catalogoCronicos, edadPaciente]);
+
+  const localizacionesCancer = useMemo(
+    () => (catalogoCronicos || []).filter((c) => c.grupo === GRUPO_CANCER_LOC),
+    [catalogoCronicos]
+  );
+
+  const sugerencias = useMemo(() => {
+    const q = normaliza(busqueda);
+    const yaSel = new Set(seleccion.map((s) => s.id));
+    return opciones
+      .filter((o) => !yaSel.has(o.id) && (!q || normaliza(o.label).includes(q)))
+      .slice(0, 8);
+  }, [opciones, busqueda, seleccion]);
+
+  const agregarSeleccion = (op) => {
+    setSeleccion((s) => (s.some((x) => x.id === op.id) ? s : [...s, { ...op, localizacion: "", guardadoId: null }]));
+    setBusqueda("");
+    setMostrarSug(false);
+  };
+  const quitarSeleccion = (id) => setSeleccion((s) => s.filter((x) => x.id !== id));
+  const setLocalizacion = (id, val) => setSeleccion((s) => s.map((x) => (x.id === id ? { ...x, localizacion: val } : x)));
+
+  // Tipo de visita automático por morbilidad: si la enfermedad ya se registró
+  // antes → Reconsulta; si es nueva → Primera Consulta; si hay de ambos → AMBAS.
   useEffect(() => {
-    const selNombres = (catalogoCronicos || [])
-      .filter((c) => cronicosSel.includes(c.id_enfermedad_cronica))
-      .map((c) => c.nombre);
-    const actuales = [...(motivo || "").split(/[,\n;]+/), ...selNombres].map(normaliza).filter(Boolean);
+    const actuales = seleccion.map((s) => normaliza(s.label)).filter(Boolean);
     if (actuales.length === 0) return;
     const previos = (motivosPrevios || []).map(normaliza).filter(Boolean);
     const esPrevio = (m) => previos.some((p) => p === m || p.includes(m) || m.includes(p));
     const nuevas = actuales.filter((m) => !esPrevio(m));
     const viejas = actuales.filter(esPrevio);
     setTipoVisita({ consulta: nuevas.length > 0, reconsulta: viejas.length > 0 });
-  }, [motivo, cronicosSel, motivosPrevios, catalogoCronicos]);
+  }, [seleccion, motivosPrevios]);
 
   // Factores de riesgo automáticos según IMC (peso en libras)
   useEffect(() => {
@@ -254,31 +330,47 @@ function clasificarEdad(fechaNac, fechaRef) {
         });
         visitaId = visita.id_visita;
       }
+      const motivoMapeado = seleccion
+        .map((s) => (s.grupo === GRUPO_CANCER && s.localizacion ? `${s.label} (${s.localizacion})` : s.label))
+        .join(', ') || null;
       const tipoV = tipoVisita.consulta && tipoVisita.reconsulta ? 'AMBAS' : (tipoVisita.consulta ? 'CONSULTA' : (tipoVisita.reconsulta ? 'RECONSULTA' : null));
-      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, motivo_mapeado: motivo || null, sintomas: form.sintomas||null, recetado: form.recetado||null };
+      const data = { ...form, id_visita: visitaId, id_usuario_registro: user.id, tipo_visita: tipoV, es_consulta: tipoVisita.consulta, es_reconsulta: tipoVisita.reconsulta, motivo_mapeado: motivoMapeado, sintomas: form.sintomas||null, recetado: form.recetado||null };
       delete data.imc;
       await api.registrarPreconsulta(data);
 
-      // Guardar enfermedades crónicas seleccionadas (altas y bajas)
+      // Guardar/actualizar enfermedades crónicas del paciente (altas y bajas).
+      // Se registra una sola vez y en la siguiente consulta ya viene precargado.
       if (paciente?.id_paciente) {
         try {
-          for (const ec of cronicosSel) {
-            if (!cronicasPaciente.some((x) => x.id_enfermedad_cronica === ec)) {
-              await api.agregarEnfermedadCronicaPaciente(paciente.id_paciente, { id_enfermedad_cronica: ec, id_usuario_registro: user.id });
+          const origPorId = new Map(cronicasPaciente.map((x) => [x.id_enfermedad_cronica, x]));
+          for (const s of seleccion) {
+            const orig = origPorId.get(s.id);
+            const localCambio = orig && (orig.localizacion || '') !== (s.localizacion || '');
+            if (!s.guardadoId || localCambio) {
+              if (localCambio) await api.eliminarEnfermedadCronicaPaciente(orig.id_paciente_enfermedad_cronica);
+              await api.agregarEnfermedadCronicaPaciente(paciente.id_paciente, {
+                id_enfermedad_cronica: s.id,
+                localizacion: s.localizacion || null,
+                id_usuario_registro: user.id,
+              });
             }
           }
+          const idsSel = new Set(seleccion.map((s) => s.id));
           for (const ex of cronicasPaciente) {
-            if (!cronicosSel.includes(ex.id_enfermedad_cronica)) {
+            if (!idsSel.has(ex.id_enfermedad_cronica)) {
               await api.eliminarEnfermedadCronicaPaciente(ex.id_paciente_enfermedad_cronica);
             }
           }
         } catch (e) { console.error(e); }
       }
 
+      // Factores de riesgo y tamizajes: se calculan/guardan automáticamente.
       try {
         const p = parseFloat(form.peso);
         const t = parseFloat(form.talla);
         const imcCalc = p && t && t > 0 ? ((p / 2.2) / (t * t)) : null;
+        const cm = parseFloat(factores.circ_abdominal_cm);
+        const circTomada = (edadPaciente === null || edadPaciente >= 20) && !isNaN(cm) && cm > 0;
         await api.guardarFactoresRiesgo({
           id_visita: visitaId,
           id_usuario_registro: user.id,
@@ -286,10 +378,10 @@ function clasificarEdad(fechaNac, fechaRef) {
           sobrepeso_imc: (imcCalc >= 25 && imcCalc < 30) ? imcCalc.toFixed(2) : null,
           obesidad: imcCalc >= 30,
           obesidad_imc: imcCalc >= 30 ? imcCalc.toFixed(2) : null,
-          circ_abdominal: factores.circ_abdominal,
-          circ_abdominal_cm: factores.circ_abdominal_cm || null,
-          circ_abdominal_fecha: factores.circ_abdominal_fecha || null,
-          riesgo_ecv_elevado: factores.riesgo_ecv_elevado,
+          circ_abdominal: circTomada,
+          circ_abdominal_cm: circTomada ? cm : null,
+          circ_abdominal_fecha: circTomada ? (factores.circ_abdominal_fecha || new Date().toISOString().slice(0, 10)) : null,
+          riesgo_ecv_elevado: !!(factores.riesgo_ecv_observacion || '').trim(),
           riesgo_ecv_observacion: factores.riesgo_ecv_observacion || null,
         });
       } catch (e) { console.error(e); }
@@ -306,6 +398,11 @@ function clasificarEdad(fechaNac, fechaRef) {
   const goToConsulta = () => {
     if (id_visita) navigate(`/consulta?id_visita=${id_visita}`);
   };
+
+  const imcNum = imc != null && imc !== '' ? parseFloat(imc) : NaN;
+  const esSobrepeso = !isNaN(imcNum) && imcNum >= 25 && imcNum < 30;
+  const esObesidad = !isNaN(imcNum) && imcNum >= 30;
+  const aplicaCircunferencia = edadPaciente === null || edadPaciente >= 20;
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 size={32} className="animate-spin text-[#005eb8]" /></div>;
 
@@ -403,39 +500,59 @@ function clasificarEdad(fechaNac, fechaRef) {
           <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 mb-4 space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-1.5">Motivo de consulta / Morbilidad</label>
-              <input type="text" value={motivo} onChange={(e)=>setMotivo(e.target.value)} placeholder="Ej. Diabetes, Hipertensión, Diarrea..." className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20" />
-              <p className="text-xs text-[#424752] mt-1">La Primera Consulta o Reconsulta se calcula automáticamente según si el motivo/enfermedad ya se registró antes.</p>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e)=>{ setBusqueda(e.target.value); setMostrarSug(true); }}
+                  onFocus={()=>setMostrarSug(true)}
+                  onBlur={()=>setTimeout(()=>setMostrarSug(false), 150)}
+                  placeholder="Escribe una enfermedad (ej. Diabetes, Hipertensión, Cáncer...)"
+                  className="w-full border border-[#c2c6d4] rounded-lg px-3 py-2 focus:outline-none focus:border-[#005eb8] focus:ring-2 focus:ring-[#005eb8]/20"
+                />
+                {mostrarSug && sugerencias.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-[#c2c6d4] rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {sugerencias.map((op) => (
+                      <button type="button" key={op.key} onMouseDown={(e)=>e.preventDefault()} onClick={()=>agregarSeleccion(op)} className="block w-full text-left px-3 py-2 text-sm hover:bg-[#f2f4f6]">
+                        {op.label}
+                        {op.grupo === GRUPO_CANCER_LOC && <span className="text-xs text-[#424752]"> · localización</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-[#424752] mt-1">Escribe y selecciona de la lista. Se guarda una sola vez y en la próxima consulta ya aparece cargado.</p>
             </div>
 
-            <div>
-              <button type="button" onClick={()=>setMostrarCronicos(v=>!v)} className="text-sm font-semibold text-[#005eb8]">
-                {mostrarCronicos ? "▾" : "▸"} Enfermedades crónicas {cronicosSel.length > 0 ? `(${cronicosSel.length} seleccionada${cronicosSel.length>1?"s":""})` : ""}
-              </button>
-              {mostrarCronicos && (
-                <div className="mt-2 border border-[#c2c6d4] rounded-lg max-h-52 overflow-y-auto p-2 grid sm:grid-cols-2 gap-1">
-                  {(catalogoCronicos||[]).length === 0 && <div className="text-xs text-[#424752] p-1">Sin catálogo disponible.</div>}
-                  {(catalogoCronicos||[]).map((c) => (
-                    <label key={c.id_enfermedad_cronica} className="flex items-start gap-2 text-sm p-1 rounded hover:bg-[#f2f4f6]">
-                      <input type="checkbox" className="mt-0.5" checked={cronicosSel.includes(c.id_enfermedad_cronica)} onChange={(e)=>setCronicosSel(s => e.target.checked ? [...s, c.id_enfermedad_cronica] : s.filter(x=>x!==c.id_enfermedad_cronica))} />
-                      <span>{c.nombre}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            {seleccion.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {seleccion.map((s) => (
+                  <div key={s.id} className="flex items-center gap-2 bg-[#e6f2f3] border border-[#9ed0d3] text-[#004d56] rounded-full pl-3 pr-1.5 py-1 text-sm">
+                    <span className="font-medium">{s.label}</span>
+                    {s.grupo === GRUPO_CANCER && (
+                      <select
+                        value={s.localizacion || ''}
+                        onChange={(e)=>setLocalizacion(s.id, e.target.value)}
+                        className="text-xs border border-[#9ed0d3] rounded bg-white px-1 py-0.5"
+                      >
+                        <option value="">Localización…</option>
+                        {localizacionesCancer.map((l) => (
+                          <option key={l.id_enfermedad_cronica} value={l.nombre}>{l.nombre.replace(/^Cáncer\s+/i, '')}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button type="button" onClick={()=>quitarSeleccion(s.id)} className="w-5 h-5 rounded-full hover:bg-[#c7e4e6] text-[#004d56] font-bold leading-none" title="Quitar">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div>
-              <div className="text-sm font-semibold mb-2">Tipo de Visita (automático por morbilidad)</div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={tipoVisita.consulta} onChange={(e)=>setTipoVisita(t=>({...t, consulta:e.target.checked}))} />
-                  <span>PRIMERA CONSULTA</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={tipoVisita.reconsulta} onChange={(e)=>setTipoVisita(t=>({...t, reconsulta:e.target.checked}))} />
-                  <span>RECONSULTA</span>
-                </label>
-                {tipoVisita.consulta && tipoVisita.reconsulta && <span className="px-2 py-0.5 bg-[#d0e1fb] text-[#00478d] text-xs rounded">AMBAS</span>}
+              <div className="text-sm font-semibold mb-2">Tipo de Visita (automático)</div>
+              <div className="flex gap-2 flex-wrap">
+                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${tipoVisita.consulta ? 'bg-[#d0e1fb] text-[#00478d]' : 'bg-[#eceef0] text-[#8a8f99]'}`}>PRIMERA CONSULTA</span>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${tipoVisita.reconsulta ? 'bg-[#d0e1fb] text-[#00478d]' : 'bg-[#eceef0] text-[#8a8f99]'}`}>RECONSULTA</span>
+                {tipoVisita.consulta && tipoVisita.reconsulta && <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#00478d] text-white">AMBAS</span>}
               </div>
             </div>
           </div>
@@ -537,24 +654,27 @@ function clasificarEdad(fechaNac, fechaRef) {
             </div>
 
 
-            <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 space-y-2">
-              <div className="text-sm font-semibold">Factores de riesgo y tamizajes (guardar como dato)</div>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <label className="flex items-center gap-2"><input type="checkbox" checked={factores.sobrepeso} onChange={(e)=>setFactores(f=>({...f,sobrepeso:e.target.checked}))}/>Sobrepeso (25–29.9)</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={factores.obesidad} onChange={(e)=>setFactores(f=>({...f,obesidad:e.target.checked}))}/>Obesidad (&gt;=30)</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={factores.circ_abdominal} onChange={(e)=>setFactores(f=>({...f,circ_abdominal:e.target.checked}))}/>Circunferencia abdominal</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={factores.riesgo_ecv_elevado} onChange={(e)=>setFactores(f=>({...f,riesgo_ecv_elevado:e.target.checked}))}/>Riesgo ECV elevado</label>
+            <div className="bg-white border border-[#c2c6d4] rounded-lg p-4 space-y-3">
+              <div className="text-sm font-semibold">Factores de riesgo y tamizajes (automático)</div>
+              <div className="flex flex-wrap gap-2">
+                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${esSobrepeso ? 'bg-[#ffe9c7] text-[#8a5a00]' : 'bg-[#eceef0] text-[#8a8f99]'}`}>Sobrepeso (25–29.9){esSobrepeso ? ' · Sí' : ''}</span>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${esObesidad ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#eceef0] text-[#8a8f99]'}`}>Obesidad (≥30){esObesidad ? ' · Sí' : ''}</span>
               </div>
-              {factores.circ_abdominal && (
-                <div className="flex gap-2">
-                  <input type="number" step="0.1" placeholder="cm" value={factores.circ_abdominal_cm} onChange={(e)=>setFactores(f=>({...f,circ_abdominal_cm:e.target.value}))} className="border border-[#c2c6d4] rounded px-2 py-1" />
+              <p className="text-xs text-[#424752]">Sobrepeso y obesidad se calculan solos con el peso y la talla (IMC). No hay que marcarlos.</p>
+
+              {(edadPaciente === null || edadPaciente >= 20) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-sm">Circunferencia abdominal:</label>
+                  <input type="number" step="0.1" min="0" placeholder="cm" value={factores.circ_abdominal_cm} onChange={(e)=>setFactores(f=>({...f,circ_abdominal_cm:e.target.value}))} className="w-28 border border-[#c2c6d4] rounded px-2 py-1" />
                   <input type="date" value={factores.circ_abdominal_fecha} onChange={(e)=>setFactores(f=>({...f,circ_abdominal_fecha:e.target.value}))} className="border border-[#c2c6d4] rounded px-2 py-1" />
+                  {parseFloat(factores.circ_abdominal_cm) > 0 && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-[#c7f0f4] text-[#006a71]">Tamizada</span>}
                 </div>
               )}
-              {factores.riesgo_ecv_elevado && (
-                <input type="text" placeholder="Observación" value={factores.riesgo_ecv_observacion} onChange={(e)=>setFactores(f=>({...f,riesgo_ecv_observacion:e.target.value}))} className="border border-[#c2c6d4] rounded px-2 py-1 w-full" />
-              )}
 
+              <div>
+                <label className="text-sm block mb-1">Riesgo elevado de enfermedades del corazón (observación)</label>
+                <input type="text" placeholder="Escribe una observación si aplica..." value={factores.riesgo_ecv_observacion} onChange={(e)=>setFactores(f=>({...f,riesgo_ecv_observacion:e.target.value}))} className="w-full border border-[#c2c6d4] rounded px-2 py-1" />
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-[#eceef0]">
