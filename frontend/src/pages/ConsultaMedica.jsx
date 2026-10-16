@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, CheckCircle2, AlertCircle, FileText, Pill, HeartPulse, ArrowLeft, X, Plus, Search, Download, PenLine, PackageCheck } from "lucide-react";
-import { jsPDF } from "jspdf";
 import { api } from "../services/api";
 import Layout from "../components/Layout";
+import { PdfBuilder, preloadLogo, fechaCorta, tipoVisitaLegible, nombreArchivo } from "../utils/pdf";
 
 export default function ConsultaMedica() {
   const navigate = useNavigate();
@@ -167,35 +167,43 @@ const fetchData = async () => {
     }
   };
 
-  const descargarNota = () => {
-    const doc = new jsPDF({ unit: "mm", format: [139.7, 215.9] });
-    const W = 139.7;
-    let y = 16;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text("NOTA DE CONSULTA MÉDICA", W / 2, y, { align: "center" });
-    y += 6;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text("Centro Médico Público de Zaculeu", W / 2, y, { align: "center" });
-    y += 10;
-    doc.setFontSize(10);
-    doc.text(`Paciente: ${paciente?.nombre_completo || ""}`, 12, y); y += 6;
-    doc.text(`DPI: ${paciente?.dpi || "—"}    Edad: ${paciente?.edad || "—"} años`, 12, y); y += 6;
-    doc.text(`Fecha: ${new Date().toLocaleDateString("es-GT")}    Versión: ${versionActual}`, 12, y); y += 8;
-    const block = (title, text) => {
-      doc.setFont("helvetica", "bold");
-      doc.text(title, 12, y); y += 5;
-      doc.setFont("helvetica", "normal");
-      const lines = doc.splitTextToSize(text || "—", W - 24);
-      doc.text(lines, 12, y);
-      y += lines.length * 5 + 4;
-    };
-    block("Diagnóstico:", form.diagnostico);
-    block("Indicaciones / Tratamiento:", form.indicaciones);
-    if (form.observaciones) block("Observaciones:", form.observaciones);
-    if (form.fecha_seguimiento) block("Fecha de seguimiento:", form.fecha_seguimiento);
-    doc.save(`nota-consulta-${paciente?.dpi || paciente?.id_paciente || "paciente"}.pdf`);
+  const descargarNota = async () => {
+    const logo = await preloadLogo();
+    const pdf = new PdfBuilder({ format: [139.7, 215.9] }).attachLogo(logo);
+    pdf.header("Nota de Consulta", `Atendido el ${fechaCorta(visita?.fecha_visita || new Date())}  ·  Versión ${versionActual}`);
+
+    pdf.sectionTitle("Paciente");
+    pdf.infoGrid([
+      { label: "Nombre", value: paciente?.nombre_completo },
+      { label: "DPI", value: paciente?.dpi || "—" },
+      { label: "Edad", value: `${paciente?.edad || "—"} años` },
+      { label: "Sexo", value: paciente?.sexo === "M" ? "Masculino" : "Femenino" },
+    ], 2);
+
+    const pre = preconsulta || {};
+    const vitales = [
+      pre.presion_sistolica ? { label: "Presión arterial", value: `${pre.presion_sistolica}/${pre.presion_diastolica || "—"} mmHg` } : null,
+      pre.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${pre.frecuencia_cardiaca} lpm` } : null,
+      pre.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${pre.frecuencia_respiratoria} rpm` } : null,
+      pre.temperatura ? { label: "Temperatura", value: `${pre.temperatura} °C` } : null,
+      pre.saturacion_oxigeno ? { label: "Saturación O₂", value: `${pre.saturacion_oxigeno} %` } : null,
+      pre.peso ? { label: "Peso", value: `${pre.peso} lb` } : null,
+      pre.talla ? { label: "Talla", value: `${pre.talla} m` } : null,
+      pre.imc ? { label: "IMC", value: `${pre.imc}` } : null,
+    ].filter(Boolean);
+    if (vitales.length) { pdf.sectionTitle("Signos vitales"); pdf.infoGrid(vitales, 2); }
+
+    pdf.sectionTitle("Consulta");
+    pdf.keyValue("Motivo / morbilidad", visita?.motivo_mapeado || visita?.motivo_consulta || pre.motivo_mapeado || "Consulta general");
+    pdf.keyValue("Tipo de visita", tipoVisitaLegible(visita?.tipo_visita));
+    pdf.keyValue("Diagnóstico", form.diagnostico);
+    pdf.keyValue("Indicaciones / tratamiento", form.indicaciones);
+    if (recetas.length) pdf.keyValue("Medicamentos dispensados", recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
+    pdf.keyValue("Observaciones", form.observaciones);
+    pdf.keyValue("Próxima cita", form.fecha_seguimiento ? fechaCorta(form.fecha_seguimiento) : "");
+
+    pdf.firma(user?.nombre || "Médico tratante", "Médico tratante");
+    pdf.save(`nota_consulta_${nombreArchivo(paciente?.nombre_completo || paciente?.dpi || "paciente")}.pdf`);
   };
 
   const handleSubmit = async (e) => {

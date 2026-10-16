@@ -8,7 +8,9 @@ import {
 import { api } from "../services/api";
 import { roles } from "../services/permisos";
 import Layout from "../components/Layout";
-import { jsPDF } from "jspdf";
+import {
+  PdfBuilder, preloadLogo, fechaCorta, tipoVisitaLegible, factoresLegibles, nombreArchivo,
+} from "../utils/pdf";
 
 const statusStyles = {
   completado: "bg-[#d0e1fb] text-[#00478d]",
@@ -29,6 +31,7 @@ export default function ExpedientesClinicos() {
 
   const [paciente, setPaciente] = useState(null);
   const [visitas, setVisitas] = useState([]);
+  const [cronicas, setCronicas] = useState([]);
   const [pacientes, setPacientes] = useState([]);
   const [busqueda, setBusqueda] = useState(searchParams.get("q") || "");
   const [loading, setLoading] = useState(true);
@@ -36,6 +39,9 @@ export default function ExpedientesClinicos() {
   const [confirmarBorrar, setConfirmarBorrar] = useState(null);
   const [borrando, setBorrando] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [editandoAlergias, setEditandoAlergias] = useState(false);
+  const [alergiasInput, setAlergiasInput] = useState("");
+  const [guardandoAlergias, setGuardandoAlergias] = useState(false);
 
   const user = JSON.parse(localStorage.getItem("auth") || "{}");
   const puedeEliminar = ["administrador", "director"].includes(user.rol);
@@ -43,6 +49,7 @@ export default function ExpedientesClinicos() {
   const fetchData = async () => {
     setPaciente(null);
     setVisitas([]);
+    setCronicas([]);
     setExpandedVisita(null);
     if (!id_paciente) {
       try {
@@ -59,6 +66,7 @@ export default function ExpedientesClinicos() {
       const exp = await api.getExpediente(id_paciente);
       setPaciente(exp.paciente);
       setVisitas(exp.visitas);
+      setCronicas(exp.cronicas || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -96,267 +104,147 @@ export default function ExpedientesClinicos() {
     }
   };
 
-  const handleDescargarHistorial = () => {
+  const abrirEditarAlergias = () => {
+    setAlergiasInput(paciente?.alergias || "");
+    setEditandoAlergias(true);
+  };
+
+  const guardarAlergias = async () => {
     if (!paciente) return;
+    setGuardandoAlergias(true);
+    try {
+      await api.actualizarPaciente(paciente.id_paciente, { alergias: alergiasInput.trim() });
+      setPaciente((p) => ({ ...p, alergias: alergiasInput.trim() }));
+      setEditandoAlergias(false);
+    } catch (err) {
+      setFeedback({ type: "err", msg: err.message });
+    } finally {
+      setGuardandoAlergias(false);
+    }
+  };
 
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const pageW = 210;
-    const pageH = 297;
-    const M = 15;
-    const innerW = pageW - M * 2;
-    let y = M;
+  const handleDescargarHistorial = async () => {
+    if (!paciente) return;
+    const logo = await preloadLogo();
+    const pdf = new PdfBuilder({ format: "a4" }).attachLogo(logo);
+    pdf.header("Expediente Clínico", paciente.nombre_completo);
 
-    const azul = [0, 94, 184];
-    const gris = [66, 71, 82];
-    const negro = [25, 28, 30];
+    pdf.sectionTitle("Datos del paciente");
+    pdf.infoGrid([
+      { label: "Nombre completo", value: paciente.nombre_completo },
+      { label: "DPI", value: paciente.dpi || "—" },
+      { label: "Edad", value: `${paciente.edad || "—"} años` },
+      { label: "Sexo", value: paciente.sexo === "M" ? "Masculino" : "Femenino" },
+      { label: "Teléfono", value: paciente.telefono || "—" },
+      { label: "Registro", value: fechaCorta(paciente.fecha_registro) },
+      { label: "Dirección", value: paciente.direccion || "—" },
+    ], 2);
 
-    const asegurarEspacio = (alto) => {
-      if (y + alto > pageH - M) {
-        doc.addPage();
-        y = M;
-      }
-    };
+    pdf.sectionTitle("Antecedentes");
+    pdf.callout(
+      paciente.alergias ? `Alergias: ${paciente.alergias}` : "Alergias: no refiere / sin registro",
+      paciente.alergias ? "danger" : "info"
+    );
+    const cronicasTxt = (cronicas || []).map((c) => (c.localizacion ? `${c.grupo} (${c.localizacion})` : c.grupo));
+    pdf.keyValue(
+      "Enfermedades crónicas",
+      cronicasTxt.length ? cronicasTxt.join(", ") : (paciente.enfermedades_cronicas || "Sin registro")
+    );
+    pdf.keyValue("Medicamentos actuales", paciente.medicamentos_actuales || "Sin registro");
+    if (paciente.esta_embarazada || paciente.embarazo_finalizado || paciente.fur || paciente.fpp || paciente.imc_pregestacional != null) {
+      const partes = [
+        paciente.esta_embarazada ? "En curso" : "Finalizado",
+        paciente.fur ? `FUM ${fechaCorta(paciente.fur)}` : "",
+        paciente.fpp ? `FPP ${fechaCorta(paciente.fpp)}` : "",
+        paciente.semana_gestacion != null ? `${paciente.semana_gestacion} semanas` : "",
+        paciente.imc_pregestacional != null ? `IMC pregestacional ${paciente.imc_pregestacional}` : "",
+        paciente.peso_habitual_kg != null ? `Peso habitual ${paciente.peso_habitual_kg} kg` : "",
+      ].filter(Boolean);
+      pdf.keyValue("Embarazo", partes.join("  ·  "));
+    }
+    pdf.y += 1;
 
-    const separador = (color = azul, ancho = 0.4) => {
-      doc.setDrawColor(...color);
-      doc.setLineWidth(ancho);
-      doc.line(M, y, pageW - M, y);
-      y += 4;
-    };
-
-    const linea = (titulo, cuerpo) => {
-      if (!cuerpo) return;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.setTextColor(...negro);
-      const label = `${titulo}: `;
-      doc.text(label, M, y);
-      const labelW = doc.getTextWidth(label);
-      doc.setFont("helvetica", "normal");
-      const rest = doc.splitTextToSize(cuerpo, innerW - labelW);
-      doc.text(rest[0], M + labelW, y);
-      for (let k = 1; k < rest.length; k++) {
-        doc.text(rest[k], M, y + k * 4.4);
-      }
-      y += Math.max(rest.length, 1) * 4.4 + 0.5;
-    };
-
-    // Encabezado
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.setTextColor(...azul);
-    doc.text("Centro Médico Público de Zaculeu", pageW / 2, y, { align: "center" });
-    y += 6;
-    doc.setFontSize(12);
-    doc.setTextColor(...negro);
-    doc.text("EXPEDIENTE CLÍNICO", pageW / 2, y, { align: "center" });
-    y += 5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...gris);
-    doc.text(`Generado: ${new Date().toLocaleString("es-GT")}`, pageW / 2, y, { align: "center" });
-    y += 2;
-    separador();
-    y += 2;
-
-    // Datos del paciente
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(...negro);
-    doc.text(paciente.nombre_completo, M, y);
-    y += 6;
-
-    const fila2 = (l1, v1, l2, v2) => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5);
-      doc.setTextColor(...negro);
-      doc.text(l1, M, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(v1, M + 34, y);
-      doc.setFont("helvetica", "bold");
-      doc.text(l2, pageW / 2 + 5, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(v2, pageW / 2 + 39, y);
-      y += 5;
-    };
-
-    fila2("DPI / ID:", paciente.dpi || "—", "Edad:", `${paciente.edad || "—"} años`);
-    fila2("Sexo:", paciente.sexo === "M" ? "Masculino" : "Femenino", "Registro:", new Date(paciente.fecha_registro).toLocaleDateString("es-GT"));
-    if (paciente.alergias) linea("Alergias", paciente.alergias);
-    if (paciente.enfermedades_cronicas) linea("Enfermedades crónicas", paciente.enfermedades_cronicas);
-    if (paciente.medicamentos_actuales) linea("Medicamentos actuales", paciente.medicamentos_actuales);
-    y += 2;
-    separador();
-
-    // Historial
-    asegurarEspacio(12);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(...azul);
-    doc.text("HISTORIAL DE VISITAS", M, y);
-    y += 6;
-
-    if (visitas.length === 0) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(...gris);
-      doc.text("No hay visitas registradas.", M, y);
+    pdf.sectionTitle(`Historial de visitas (${visitas.length})`);
+    if (!visitas.length) {
+      pdf.paragraph("No hay visitas registradas para este paciente.");
     } else {
       visitas.forEach((v, i) => {
-        asegurarEspacio(22);
-        const titulo = `Visita ${visitas.length - i} — ${new Date(v.fecha_visita).toLocaleString("es-GT")}`;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(...azul);
-        doc.text(titulo, M, y);
-        const estado = (statusLabel[v.estado] || v.estado).toUpperCase();
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8.5);
-        doc.setTextColor(...gris);
-        doc.text(`[${estado}]`, pageW - M, y, { align: "right" });
-        y += 5;
+        const num = visitas.length - i;
+        const estado = (statusLabel[v.estado] || v.estado || "").toUpperCase();
+        pdf.subheader(`Visita ${num}  ·  ${new Date(v.fecha_visita).toLocaleString("es-GT")}`, estado);
 
-        linea("Motivo", v.motivo_consulta || "Consulta general");
         const vitales = [
-          v.presion_sistolica ? `Presión ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
-          v.temperatura ? `Temp ${v.temperatura} °C` : "",
-          v.peso ? `Peso ${v.peso} lb` : "",
-          v.talla ? `Altura ${v.talla} m` : "",
-          v.imc ? `IMC ${v.imc}` : "",
-        ].filter(Boolean).join("  ·  ");
-        linea("Signos vitales", vitales);
-        linea("Motivo / Morbilidad", v.motivo_mapeado || v.motivo_consulta);
-        linea("Diagnóstico", v.diagnostico);
-        linea("Indicaciones", v.indicaciones);
-        if (v.recetas && v.recetas.length) {
-          linea("Dispensados", v.recetas.map(r => `${r.nombre} (${r.cantidad})`).join(", "));
-        }
-        linea("Observaciones", v.observaciones);
-        linea("Seguimiento", v.fecha_seguimiento ? new Date(v.fecha_seguimiento).toLocaleDateString("es-GT") : "");
-        linea("Médico", v.nombre_medico);
-        separador(gris, 0.2);
-        y += 2;
+          v.presion_sistolica ? { label: "Presión arterial", value: `${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` } : null,
+          v.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${v.frecuencia_cardiaca} lpm` } : null,
+          v.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${v.frecuencia_respiratoria} rpm` } : null,
+          v.temperatura ? { label: "Temperatura", value: `${v.temperatura} °C` } : null,
+          v.saturacion_oxigeno ? { label: "Saturación O₂", value: `${v.saturacion_oxigeno} %` } : null,
+          v.peso ? { label: "Peso", value: `${v.peso} lb` } : null,
+          v.talla ? { label: "Talla", value: `${v.talla} m` } : null,
+          v.imc ? { label: "IMC", value: `${v.imc}` } : null,
+        ].filter(Boolean);
+        if (vitales.length) pdf.infoGrid(vitales, 4);
+        if (v.alerta_signos) pdf.callout(`Alerta de signos vitales${v.detalle_alerta ? `: ${v.detalle_alerta}` : ""}`, "danger");
+        pdf.keyValue("Motivo / morbilidad", v.motivo_mapeado || v.motivo_consulta || "Consulta general");
+        pdf.keyValue("Tipo de visita", tipoVisitaLegible(v.tipo_visita));
+        pdf.keyValue("Diagnóstico", v.diagnostico);
+        pdf.keyValue("Indicaciones", v.indicaciones);
+        const fdr = factoresLegibles(v);
+        if (fdr.length) pdf.keyValue("Factores de riesgo", fdr.join(", "));
+        pdf.keyValue("Síntomas", v.sintomas);
+        pdf.keyValue("Recetado / manejo", v.recetado);
+        if (v.recetas && v.recetas.length) pdf.keyValue("Medicamentos dispensados", v.recetas.map((r) => `${r.nombre} (${r.cantidad})`).join(", "));
+        pdf.keyValue("Observaciones", v.observaciones);
+        pdf.keyValue("Próxima cita", v.fecha_seguimiento ? fechaCorta(v.fecha_seguimiento) : "");
+        pdf.keyValue("Atendido por", v.nombre_medico);
+        pdf.separador();
       });
     }
 
-    doc.save(`historial_${paciente.nombre_completo.replace(/\s+/g, "_")}.pdf`);
+    pdf.save(`expediente_${nombreArchivo(paciente.nombre_completo)}.pdf`);
   };
 
-  const descargarNota = (v) => {
+  const descargarNota = async (v) => {
     if (!paciente) return;
+    const logo = await preloadLogo();
+    const pdf = new PdfBuilder({ format: [139.7, 215.9] }).attachLogo(logo);
+    pdf.header("Nota de Visita", `Atendido el ${new Date(v.fecha_visita).toLocaleString("es-GT")}`);
 
-    // Tamaño receta médica (media carta en vertical: 139.7 x 215.9 mm)
-    const doc = new jsPDF({ unit: "mm", format: [139.7, 215.9] });
-    const pageW = 139.7;
-    const pageH = 215.9;
-    const M = 10;
-    const innerW = pageW - M * 2;
-    let y = M;
+    pdf.sectionTitle("Paciente");
+    pdf.infoGrid([
+      { label: "Nombre", value: paciente.nombre_completo },
+      { label: "DPI", value: paciente.dpi || "—" },
+      { label: "Edad", value: `${paciente.edad || "—"} años` },
+      { label: "Sexo", value: paciente.sexo === "M" ? "Masculino" : "Femenino" },
+    ], 2);
 
-    const azul = [0, 94, 184];
-    const gris = [66, 71, 82];
-    const negro = [25, 28, 30];
-
-    const separador = () => {
-      y += 2;
-      doc.setDrawColor(...azul);
-      doc.setLineWidth(0.5);
-      doc.line(M, y, pageW - M, y);
-      y += 4;
-    };
-
-    const seccion = (titulo, parrafos) => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(...azul);
-      doc.text(titulo.toUpperCase(), M, y);
-      y += 3.5;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(...negro);
-      const lines = doc.splitTextToSize(parrafos.join("\n"), innerW);
-      doc.text(lines, M, y);
-      y += lines.length * 3.4 + 2.5;
-    };
-
-    // Marco tipo receta
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.rect(3, 3, pageW - 6, pageH - 6);
-
-    // Encabezado
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(...azul);
-    doc.text("Centro Médico Público de Zaculeu", pageW / 2, y, { align: "center" });
-    y += 6;
-    doc.setFontSize(11);
-    doc.setTextColor(...negro);
-    doc.text("NOTA DE CONSULTA GENERAL", pageW / 2, y, { align: "center" });
-    y += 4.5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...gris);
-    doc.text(
-      `Atendido el ${new Date(v.fecha_visita).toLocaleString("es-GT")}  ·  Nota emitida el ${new Date().toLocaleDateString("es-GT")}`,
-      pageW / 2, y, { align: "center" }
-    );
-    separador();
-
-    // Datos del paciente
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...negro);
-    const colL = M;
-    const colR = pageW / 2 + 2;
-    doc.setFont("helvetica", "bold");
-    doc.text("Paciente:", colL, y);
-    doc.text("DPI:", colR, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(` ${paciente.nombre_completo}`, colL + 14, y);
-    doc.text(` ${paciente.dpi || "—"}`, colR + 10, y);
-    y += 4.2;
-    doc.setFont("helvetica", "bold");
-    doc.text("Edad:", colL, y);
-    doc.text("Sexo:", colR, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(` ${paciente.edad || "—"} años`, colL + 14, y);
-    doc.text(` ${paciente.sexo === "M" ? "Masculino" : "Femenino"}`, colR + 10, y);
-    y += 3;
-    separador();
-
-    // Contenido
-    seccion("Motivo de Consulta", [v.motivo_consulta || "Consulta general"]);
     const vitales = [
-      v.presion_sistolica ? `Presión arterial: ${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` : "",
-      v.temperatura ? `Temperatura: ${v.temperatura} °C` : "",
-      v.peso ? `Peso: ${v.peso} lb` : "",
-      v.talla ? `Altura: ${v.talla} m` : "",
-      v.imc ? `IMC: ${v.imc}` : "",
+      v.presion_sistolica ? { label: "Presión arterial", value: `${v.presion_sistolica}/${v.presion_diastolica || "—"} mmHg` } : null,
+      v.frecuencia_cardiaca ? { label: "Frec. cardiaca", value: `${v.frecuencia_cardiaca} lpm` } : null,
+      v.frecuencia_respiratoria ? { label: "Frec. respiratoria", value: `${v.frecuencia_respiratoria} rpm` } : null,
+      v.temperatura ? { label: "Temperatura", value: `${v.temperatura} °C` } : null,
+      v.saturacion_oxigeno ? { label: "Saturación O₂", value: `${v.saturacion_oxigeno} %` } : null,
+      v.peso ? { label: "Peso", value: `${v.peso} lb` } : null,
+      v.talla ? { label: "Talla", value: `${v.talla} m` } : null,
+      v.imc ? { label: "IMC", value: `${v.imc}` } : null,
     ].filter(Boolean);
-    if (vitales.length) seccion("Signos Vitales", [vitales.join("  ·  ")]);
-    if (v.diagnostico) seccion("Diagnóstico", [v.diagnostico]);
-    if (v.indicaciones) seccion("Indicaciones / Tratamiento", [v.indicaciones]);
-    if (v.recetas && v.recetas.length) {
-      seccion("Medicamentos Dispensados (descontados del inventario)", v.recetas.map(r =>
-        `${r.nombre}  —  Cantidad: ${r.cantidad}${r.dosis ? `  ·  ${r.dosis}` : ""}`
-      ));
-    }
-    if (v.observaciones) seccion("Observaciones", [v.observaciones]);
-    if (v.fecha_seguimiento) seccion("Próxima Cita", [`${new Date(v.fecha_seguimiento).toLocaleDateString("es-GT")}`]);
+    if (vitales.length) { pdf.sectionTitle("Signos vitales"); pdf.infoGrid(vitales, 2); }
+    if (v.alerta_signos) pdf.callout(`Alerta de signos vitales${v.detalle_alerta ? `: ${v.detalle_alerta}` : ""}`, "danger");
 
-    // Firma
-    const fy = pageH - 20;
-    doc.setDrawColor(...gris);
-    doc.setLineWidth(0.3);
-    doc.line(M, fy, M + 55, fy);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...gris);
-    doc.text(v.nombre_medico || "Médico tratante", M, fy + 3.5);
-    doc.text("Firma y sello del médico", M, fy + 7);
+    pdf.sectionTitle("Consulta");
+    pdf.keyValue("Motivo / morbilidad", v.motivo_mapeado || v.motivo_consulta || "Consulta general");
+    pdf.keyValue("Tipo de visita", tipoVisitaLegible(v.tipo_visita));
+    const fdr = factoresLegibles(v);
+    if (fdr.length) pdf.keyValue("Factores de riesgo", fdr.join(", "));
+    pdf.keyValue("Síntomas", v.sintomas);
+    pdf.keyValue("Diagnóstico", v.diagnostico);
+    pdf.keyValue("Indicaciones / tratamiento", v.indicaciones);
+    if (v.recetas && v.recetas.length) pdf.keyValue("Medicamentos", v.recetas.map((r) => `${r.nombre} (${r.cantidad})${r.dosis ? ` · ${r.dosis}` : ""}`).join(", "));
+    pdf.keyValue("Observaciones", v.observaciones);
+    pdf.keyValue("Próxima cita", v.fecha_seguimiento ? fechaCorta(v.fecha_seguimiento) : "");
 
-    doc.save(`nota_${paciente.nombre_completo.replace(/\s+/g, "_")}_${new Date(v.fecha_visita).toISOString().slice(0, 10)}.pdf`);
+    pdf.firma(v.nombre_medico, "Médico tratante");
+    pdf.save(`nota_${nombreArchivo(paciente.nombre_completo)}_${new Date(v.fecha_visita).toISOString().slice(0, 10)}.pdf`);
   };
 
   const q = busqueda.trim().toLowerCase();
@@ -367,60 +255,25 @@ export default function ExpedientesClinicos() {
       || (p.dpi || "").includes(q);
   });
 
-  const descargarListadoPacientes = () => {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const pageW = 210;
-    const M = 14;
-    let y = M;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(0, 94, 184);
-    doc.text("Centro Médico Público de Zaculeu", pageW / 2, y, { align: "center" });
-    y += 6;
-    doc.setFontSize(11);
-    doc.setTextColor(25, 28, 30);
-    doc.text("LISTADO DE PACIENTES", pageW / 2, y, { align: "center" });
-    y += 5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(66, 71, 82);
-    doc.text(`Generado: ${new Date().toLocaleString("es-GT")}  ·  Total: ${pacientesFiltrados.length}`, pageW / 2, y, { align: "center" });
-    y += 6;
-
-    const cols = [
-      { t: "No.", x: M, w: 10 },
-      { t: "Nombre", x: M + 12, w: 78 },
-      { t: "DPI", x: M + 92, w: 34 },
-      { t: "Edad", x: M + 128, w: 16 },
-      { t: "Sexo", x: M + 146, w: 20 },
-      { t: "Registro", x: M + 168, w: 22 },
-    ];
-    const header = () => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(0, 78, 141);
-      doc.setFillColor(240, 245, 255);
-      doc.rect(M, y - 4.5, pageW - M * 2, 6, "F");
-      cols.forEach((c) => doc.text(c.t, c.x, y));
-      y += 5;
-      doc.setDrawColor(194, 198, 212);
-      doc.line(M, y - 4, pageW - M, y - 4);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(25, 28, 30);
-    };
-    header();
-    pacientesFiltrados.forEach((p, i) => {
-      if (y > 285) { doc.addPage(); y = M; header(); }
-      doc.setFontSize(8.5);
-      doc.text(String(i + 1), cols[0].x, y);
-      doc.text(doc.splitTextToSize(p.nombre_completo || "—", cols[1].w)[0], cols[1].x, y);
-      doc.text(p.dpi || "—", cols[2].x, y);
-      doc.text(`${p.edad || "—"}`, cols[3].x, y);
-      doc.text(p.sexo === "M" ? "Masculino" : "Femenino", cols[4].x, y);
-      doc.text(new Date(p.fecha_registro).toLocaleDateString("es-GT"), cols[5].x, y);
-      y += 6;
-    });
-    doc.save(`listado_pacientes_${new Date().toISOString().slice(0, 10)}.pdf`);
+  const descargarListadoPacientes = async () => {
+    const logo = await preloadLogo();
+    const pdf = new PdfBuilder({ format: "a4" }).attachLogo(logo);
+    pdf.header("Listado de Pacientes", `Total: ${pacientesFiltrados.length}`);
+    const rows = pacientesFiltrados.map((p, i) => [
+      String(i + 1),
+      p.nombre_completo || "—",
+      p.dpi || "—",
+      `${p.edad || "—"}`,
+      p.sexo === "M" ? "Masculino" : "Femenino",
+      p.alergias || "—",
+      fechaCorta(p.fecha_registro),
+    ]);
+    pdf.table(
+      ["No.", "Nombre", "DPI", "Edad", "Sexo", "Alergias", "Registro"],
+      rows,
+      [8, 46, 22, 10, 20, 44, 18]
+    );
+    pdf.save(`listado_pacientes_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
 
   const visitasFiltradas = visitas.filter((v) => {
@@ -581,7 +434,8 @@ export default function ExpedientesClinicos() {
               titleColor="text-[#ba1a1a]"
               icon={AlertTriangle}
               title="ALERGIAS"
-              items={paciente.alergias ? paciente.alergias.split(",").map(a => a.trim()) : ["Sin registro"]}
+              action={<button onClick={abrirEditarAlergias} className="text-xs font-semibold underline">Editar</button>}
+              items={paciente.alergias ? paciente.alergias.split(",").map(a => a.trim()).filter(Boolean) : ["Sin registro"]}
             />
             <InfoCard
               bg="bg-[#dceeee]"
@@ -863,16 +717,64 @@ export default function ExpedientesClinicos() {
           </div>
         </div>
       )}
+      {editandoAlergias && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !guardandoAlergias && setEditandoAlergias(false)}>
+          <div className="bg-white rounded-xl p-6 w-[440px] max-w-[95vw] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-lg">Editar alergias</h3>
+                <p className="text-sm text-[#424752] mt-1">Ingrese alergias separadas por coma (ej. Penicilina, Sulfas).</p>
+              </div>
+              <button
+                onClick={() => !guardandoAlergias && setEditandoAlergias(false)}
+                className="text-[#727783] hover:bg-[#f2f4f6] rounded-md p-1.5"
+                title="Cancelar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4">
+              <textarea
+                value={alergiasInput}
+                onChange={(e) => setAlergiasInput(e.target.value)}
+                rows={4}
+                className="w-full border border-[#c2c6d4] rounded-lg p-2.5 text-sm"
+                placeholder="Ninguna / Penicilina, Ácido acetilsalicílico"
+              />
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setEditandoAlergias(false)}
+                disabled={guardandoAlergias}
+                className="flex-1 border border-[#c2c6d4] bg-white text-[#424752] py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarAlergias}
+                disabled={guardandoAlergias}
+                className="flex-1 bg-[#005eb8] text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {guardandoAlergias ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                {guardandoAlergias ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </Layout>
   );
 }
 
-function InfoCard({ bg, titleColor, icon: Icon, title, items }) {
+function InfoCard({ bg, titleColor, icon: Icon, title, items, action }) {
   return (
     <div className={`${bg} rounded-lg flex gap-3.5 p-5`}>
       <Icon size={20} className={titleColor} />
-      <div>
-        <div className={`font-bold text-xs tracking-wide mb-2 ${titleColor}`}>{title}</div>
+      <div className="flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className={`font-bold text-xs tracking-wide mb-2 ${titleColor}`}>{title}</div>
+          {action}
+        </div>
         <ul className="text-sm">
           {items.map((i) => (
             <li key={i} className="font-bold mt-0.5">{i}</li>

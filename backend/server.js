@@ -431,13 +431,18 @@ app.get('/api/expediente/:id', async (req, res) => {
         const { rows: visitas } = await pool.query(`
             SELECT v.*,
                    pr.presion_sistolica, pr.presion_diastolica, pr.frecuencia_cardiaca,
-                   pr.temperatura, pr.peso, pr.talla, pr.imc, pr.saturacion_oxigeno,
-                   pr.alerta_signos, pr.detalle_alerta, pr.tipo_visita, pr.es_consulta, pr.es_reconsulta, pr.motivo_mapeado,
+                   pr.frecuencia_respiratoria, pr.temperatura, pr.peso, pr.talla, pr.imc, pr.saturacion_oxigeno,
+                   pr.alerta_signos, pr.detalle_alerta, pr.sintomas, pr.recetado,
+                   pr.tipo_visita, pr.es_consulta, pr.es_reconsulta, pr.motivo_mapeado,
+                   fr.sobrepeso, fr.sobrepeso_imc, fr.obesidad, fr.obesidad_imc,
+                   fr.circ_abdominal, fr.circ_abdominal_cm, fr.circ_abdominal_fecha,
+                   fr.riesgo_ecv_elevado, fr.riesgo_ecv_observacion,
                    cm.diagnostico, cm.indicaciones, cm.observaciones, cm.fecha_seguimiento,
                    cm.version, cm.tipo_version, cm.entregado, cm.fecha_entrega,
                    u.nombre_completo AS nombre_medico
             FROM visita v
             LEFT JOIN preconsulta pr    ON v.id_visita = pr.id_visita
+            LEFT JOIN factor_riesgo fr  ON fr.id_visita = v.id_visita
             LEFT JOIN LATERAL (
                 SELECT * FROM consulta_medica cm
                 WHERE cm.id_visita = v.id_visita
@@ -469,7 +474,18 @@ app.get('/api/expediente/:id', async (req, res) => {
             v.recetas = recetasPorVisita[v.id_visita] || [];
         }
 
-        res.json({ paciente: pRows[0], visitas });
+        // Enfermedades crónicas / morbilidad registradas del paciente
+        const { rows: cronicas } = await pool.query(
+            `SELECT pxc.id_paciente_enfermedad_cronica, ec.grupo, ec.nombre,
+                    pxc.localizacion, pxc.fecha_diagnostico, pxc.observacion
+             FROM paciente_enfermedad_cronica pxc
+             INNER JOIN enfermedad_cronica ec ON pxc.id_enfermedad_cronica = ec.id_enfermedad_cronica
+             WHERE pxc.id_paciente = $1 AND pxc.activa = TRUE
+             ORDER BY ec.orden, ec.grupo`,
+            [id]
+        );
+
+        res.json({ paciente: pRows[0], visitas, cronicas });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error obteniendo expediente' });
@@ -1116,7 +1132,8 @@ app.put('/api/pacientes/:id_paciente', async (req, res) => {
     const { id_paciente } = req.params;
     const {
         esta_embarazada, embarazo_finalizado, fecha_embarazo_finalizado, usuario_embarazo_finalizado, motivo_embarazo_finalizado,
-        imc_pregestacional, peso_habitual_kg, fur, fpp, semana_gestacion, usuario_registro_embarazo
+        imc_pregestacional, peso_habitual_kg, fur, fpp, semana_gestacion, usuario_registro_embarazo,
+        alergias, medicamentos_actuales, telefono, direccion
     } = req.body;
     try {
         const { rows } = await pool.query(
@@ -1132,12 +1149,18 @@ app.put('/api/pacientes/:id_paciente', async (req, res) => {
                 fpp = COALESCE($9, fpp),
                 semana_gestacion = COALESCE($10, semana_gestacion),
                 usuario_registro_embarazo = COALESCE($11, usuario_registro_embarazo),
+                alergias = COALESCE($12, alergias),
+                medicamentos_actuales = COALESCE($13, medicamentos_actuales),
+                telefono = COALESCE($14, telefono),
+                direccion = COALESCE($15, direccion),
                 fecha_registro_embarazo = CASE WHEN $1 IS TRUE AND fecha_registro_embarazo IS NULL THEN NOW() ELSE fecha_registro_embarazo END
-             WHERE id_paciente = $12
+             WHERE id_paciente = $16
              RETURNING *`,
             [
                 esta_embarazada, embarazo_finalizado, fecha_embarazo_finalizado || null, usuario_embarazo_finalizado || null, motivo_embarazo_finalizado || null,
                 imc_pregestacional || null, peso_habitual_kg || null, fur || null, fpp || null, semana_gestacion || null, usuario_registro_embarazo || null,
+                alergias !== undefined ? alergias : null, medicamentos_actuales !== undefined ? medicamentos_actuales : null,
+                telefono !== undefined ? telefono : null, direccion !== undefined ? direccion : null,
                 id_paciente
             ]
         );
