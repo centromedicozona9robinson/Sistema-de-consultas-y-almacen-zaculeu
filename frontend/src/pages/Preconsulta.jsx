@@ -662,7 +662,7 @@ function clasificarEdad(fechaNac, fechaRef) {
               </div>
               <p className="text-xs text-[#424752]">Sobrepeso y obesidad se calculan solos con el peso y la talla (IMC). No hay que marcarlos.</p>
 
-              {(edadPaciente === null || edadPaciente >= 20) && (
+              {aplicaCircunferencia && (
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="text-sm">Circunferencia abdominal:</label>
                   <input type="number" step="0.1" min="0" placeholder="cm" value={factores.circ_abdominal_cm} onChange={(e)=>setFactores(f=>({...f,circ_abdominal_cm:e.target.value}))} className="w-28 border border-[#c2c6d4] rounded px-2 py-1" />
